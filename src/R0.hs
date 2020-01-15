@@ -74,63 +74,46 @@ interpExpr (Add eL eR) =
 
 {- Partial evaluator -}
 
+testPE :: String -> String
+testPE s = show . pe . doParse $ s
+
 pe :: Program -> Program
 pe (Pgrm e) = Pgrm $ peExpr e
 
-peExpr :: Expr -> Expr
-peExpr (Neg (Num x)) = Num (0 - x)
-peExpr (Add (Num l) (Num r)) = Num (l+r)
-peExpr e = e
-
-{- Exercise 1 -}
-
-testPE :: String -> String
-testPE s = show . pe2 . doParse $ s
-
-pe2 :: Program -> Program
-pe2 (Pgrm e) = Pgrm $ peExpr2 e
-
-peExpr2 :: Expr -> Expr
-peExpr2 (Neg e1) = case peExpr2 e1 of
-  (Num n)  -> Num (0 - n)
-  (Neg x)  -> peExpr2 x
-  (Add eL eR) -> peExpr2 (Add (Neg eL) (Neg eR))
-  e2       -> (Neg e2)
-peExpr2 (Add eL eR) =
-  case (peExpr2 eL, peExpr2 eR) of
-    ((Num x), (Num y)) ->
-      (Num (x + y))
-    ((Num x), (Add (Num y) eR2)) ->
-      peExpr2 ((Add (Num (x+y)) eR2))
-    ((Add a b), (Add c d)) ->
-      peExpr2 (Add a (Add b (Add c d)))
-    ((Num 0), eR2) -> eR2
-    (eL2, (Add (Num x) eR2)) ->
-      peExpr2 (Add (Num x) (Add eL2 eR2))
-    (eL2@(Add _ _), eR2) ->
-      peExpr2 (Add eR2 eL2)
-    (eL2 , (Num x)) ->
-      peExpr2 (Add (Num x) eL2)
-    (eL2, eR2) -> (Add eL2 eR2)
-
-
-
+--peExpr2 :: Expr -> Expr
+--peExpr2 (Neg (Num n)) = Num (0 - n)
+--peExpr2 (Neg (Add eL eR)) = peExpr2 (Add (Neg eL) (Neg eR))
+--peExpr2 (Neg (Neg x)) = peExpr2 x
 --peExpr2 (Add eL eR) =
---  case peExpr2 eL of
---    (Num x) ->
---      case peExpr2 eR of
---        (Num y)         -> (Num (x+y))
---        (Add (Num y) e) -> (Add (Num (x+y)) (peExpr2 e))
---        eR2             -> (Add (Num x) eR2)
---
---    (Add eL2 eR2) -> case peExpr2 eL2 of
---      (Num x) ->
---
---    eL2     ->
---      case peExpr eR of
---        eR2@(Num _)   -> peExpr2 (Add eR2 eL2)
---        eR2@(Add _ _) -> peEXpr (Add eR2 eL2)
---        eR2           -> (Add eL2 eR2)
-
-peExpr2 (Num x) = (Num x)
-peExpr2 Read = Read
+--  case (peExpr2 eL, peExpr2 eR) of
+--    ((Num x), (Num y)) ->
+--      (Num (x + y))
+--    ((Num x), (Add (Num y) eR2)) ->
+--      peExpr2 ((Add (Num (x+y)) eR2))
+--    ((Add a b), (Add c d)) ->
+--      peExpr2 (Add a (Add b (Add c d)))
+--    ((Num 0), eR2) -> eR2
+--    (eL2, (Add (Num x) eR2)) ->
+--      peExpr2 (Add (Num x) (Add eL2 eR2))
+--    (eL2@(Add _ _), eR2) ->
+--      peExpr2 (Add eR2 eL2)
+--    (eL2 , (Num x)) ->
+--      peExpr2 (Add (Num x) eL2)
+--    (eL2, eR2) -> (Add eL2 eR2)
+peExpr :: Expr -> Expr
+peExpr (Neg (Num n)) = Num (0 - n)
+peExpr (Neg (Add eL eR)) = peExpr (Add (Neg eL) (Neg eR))
+peExpr (Neg (Neg x)) = peExpr x
+peExpr (Add (Num x) (Num y)) = (Num (x+y))
+peExpr (Add (Num 0) e) = peExpr e
+peExpr (Add (Num x) (Add (Num y) e)) = peExpr (Add (Num (x+y)) e)
+peExpr (Add (Add a b) (Add c d)) = peExpr (Add a (Add b (Add c d)))
+peExpr (Add e (Num x)) = peExpr (Add (Num x) e)
+peExpr (Add e1 (Add (Num x) e2)) = peExpr (Add (Num x) (Add e1 e2))
+peExpr (Add e1@(Add _ _) e2) = peExpr (Add e2 e1)
+peExpr (Add eL eR) =
+  case (peExpr eL, peExpr eR) of
+    (eL2, (Add (Num x) eR2)) ->
+      peExpr (Add (Num x) (Add eL2 eR2))
+    (eL2, eR2) -> (Add eL2 eR2)
+peExpr e = e
