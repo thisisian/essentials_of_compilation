@@ -1,19 +1,15 @@
 module C0 where
 
 data Arg = Num Int | Var String
+  deriving (Show, Eq)
 data Expr = Plain Arg | Read | Neg Arg | Plus Arg Arg
+  deriving (Show, Eq)
 data Assign = Assign String Expr
+  deriving (Show, Eq)
 data Tail = Return Expr | Seq Assign Tail
+  deriving (Show, Eq)
 data Program = Pgrm Info [(String, Tail)]
+  deriving (Show, Eq)
 
 data Info = Locals [String]
-
-uncover_locals :: Program -> Program
-uncover_locals (Pgrm i [(s, t)]) =
-  let locals = Locals (collectLocals t)
-  in (Pgrm locals [(s, t)])
-uncover_locals (Pgrm _ _) = undefined
-
-collectLocals :: Tail -> [String]
-collectLocals (Seq (Assign n _) t) = n : collectLocals t
-collectLocals (Return _) = []
+  deriving (Show, Eq)
