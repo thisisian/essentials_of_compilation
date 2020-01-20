@@ -91,7 +91,7 @@ rcoArg (R1.Neg e) = do
 rcoArg (R1.Add eL eR) = do
   (bindingsL, eL') <- rcoArg eL
   (bindingsR, eR') <- rcoArg eR
-  n <- fresh
+  n <- freshTemp
   return $ (bindingsL ++ bindingsR ++ [(n, (R1.Add eL' eR'))]
            , R1.Var n)
 rcoArg (R1.Let n be e) = do
