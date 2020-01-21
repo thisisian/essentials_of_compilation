@@ -1,15 +1,13 @@
 import Test.HUnit
 import Text.Parsec hiding (parseTest)
+import Common
+import System.Directory
 import qualified R0
 import qualified R1
 import qualified Chapter2 as Ch2
 
 main :: IO ()
 main = runTestTT r1Tests >> pure ()
-
-fromRight :: Either a b -> b
-fromRight (Right b) = b
-fromRight _ = undefined
 
 parseTest :: (Show a) => (String -> a) -> String -> Test
 parseTest p input = TestCase $
@@ -28,7 +26,25 @@ equalInterpTest :: (Eq b, Show b)
 equalInterpTest p iRef iTest input = TestLabel ("EqualInterp Test: " ++ input) $ TestCase $
   let actual = iRef (p input)
       expected = iTest (p input)
-  in assertEqual ("Interp Test: " ++ input) expected actual
+  in assertEqual ("Equal Test: " ++ input) expected actual
+
+compileTest :: (Show b)
+  => (String -> a)     -- ^ Parser
+  -> ([b] -> a -> Int) -- ^ Interpreter
+  -> (a -> String)     -- ^ Compiler
+  -> [b]               -- ^ Inputs
+  -> String            -- ^ Program
+  -> Test
+compileTest p i c input prog = TestLabel ("") $ TestCase $ do
+  let expected =  (i input (p prog)) `mod` 256
+  compileToFile p c prog "./test/testenv/test"
+  actual <- runBinary "./test/testenv/test" input
+  removeFile "./test/testenv/test.s"
+  removeFile "./test/testenv/test"
+  assertEqual ("Compile Test: " ++ prog)
+    expected
+    actual
+
 
 -- R0 --
 
@@ -89,6 +105,11 @@ testR1RCO :: String -> Test
 testR1RCO =
   equalInterpTest R1.doParse (R1.interp [0,5..]) (R1.interp [0,5..] . Ch2.rco . Ch2.uniquify )
 
+ch2CompileTest :: [Int] -> String -> Test
+ch2CompileTest input =
+  compileTest R1.doParse R1.interp Ch2.compile input
+
+
 r1Tests = TestLabel "R1". TestList $
   [ parseTest R1.doParse "(+ 8 2)"
   , parseTest R1.doParse "(+ (+ (read) (- 4)) (read))"
@@ -110,13 +131,29 @@ r1Tests = TestLabel "R1". TestList $
   , testR1RCO testR1Expr4
   , testR1RCO testR1Expr5
   , testR1RCO testR1Expr6
+  , testR1RCO testR1Expr7
+  , ch2CompileTest [] testR1ExprS1
+  , ch2CompileTest [10] testR1ExprS2
+  , ch2CompileTest [5,10] testR1ExprS3
+  , ch2CompileTest [5] testR1ExprS4
+  , ch2CompileTest [] testR1Expr1
+  , ch2CompileTest [6, 2] testR1ExprS5
+  , ch2CompileTest [3,6,2,3,4,6,2,1,7,4,3,2,4,5,7,2,1,5,6,7,3,2,1] testR1Expr3
+  , ch2CompileTest [7,3] testR1Expr5
+  , ch2CompileTest [] testR1Expr6
+  , ch2CompileTest [7,3,2] testR1Expr7
   ]
+
+testR1ExprS1 = "(+ 8 2)"
+testR1ExprS2 = "(+ (read) 2)"
+testR1ExprS3 = "(+ (read) (read))"
+testR1ExprS4 = "(read)"
+testR1ExprS5 = "(let ([ x (let ([ x 5 ]) x) ]) x)"
 
 testR1Expr1 = "(let ([x 32]) (+ (let ([x 10]) x) x))"
 testR1Expr2 = "(let ([ x (let ([ x (read)]) (+ x (read))) ]) (+ (let ([ x 15 ]) (+ (- x) 100)) (+ x 105)))"
 testR1Expr3 = "(+ (let ([ x (read)]) (+ x  (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))))) (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))"
-testR1Expr4 =  "(let ([x (read)]) (+ (let ([y (read)]) (+ x y)) (let ([y (read)]) (+ y x))))"
-
+testR1Expr4 =  "(+ (let ([y (read)]) y) (let ([y (read)]) y))"
 testR1Expr5 = "(let ([x (read)]) (+ (let ([y (read)]) (+ x (- y))) x))"
-
 testR1Expr6 = "(+ (let ([ x 1 ]) (+ x 2)) 3)"
+testR1Expr7 =  "(let ([x (read)]) (+ (let ([y (read)]) (+ x y)) (let ([y (read)]) (+ y x))))"

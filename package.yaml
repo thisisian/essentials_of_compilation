@@ -24,6 +24,8 @@ dependencies:
 - containers
 - mtl
 - parsec
+- process 
+- system-filepath
 
 ghc-options:
   - -Wall
@@ -36,6 +38,7 @@ ghc-options:
 
 default-extensions:
 - ScopedTypeVariables
+- OverloadedStrings
 
 library:
   source-dirs: src
@@ -61,4 +64,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - essentials-of-compilation
+    - directory
     - HUnit

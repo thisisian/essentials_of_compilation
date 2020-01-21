@@ -12,8 +12,8 @@ import qualified X860 as X
 
 import Common
 
-compile :: String -> String
-compile prog =
+compile :: (R1.Program) -> String
+compile =
   prettyPrint
   . patchInstructions
   . assignHomes
@@ -22,7 +22,6 @@ compile prog =
   . explicateControl
   . rco
   . uniquify
-  . R1.doParse $ prog
 
 {- Uniqify Variables -}
 
@@ -76,13 +75,17 @@ rcoExpr (R1.Add eL eR) = do
   (bindingsR, eR') <- rcoArg eR
   return (makeBindings (bindingsL++bindingsR) (R1.Add eL' eR'))
 rcoExpr (R1.Let name be e) = do
+  (bindingsBE, be') <- rcoArg be
   e' <- rcoExpr e
-  return (R1.Let name be e')
+  return (makeBindings bindingsBE (R1.Let name be' e'))
 
 rcoArg :: R1.Expr -> State Int ([(String, R1.Expr)], R1.Expr)
 rcoArg (R1.Num x) = return ([], (R1.Num x))
 rcoArg (R1.Var name) = return ([], (R1.Var name))
-rcoArg (R1.Read) = return ([], R1.Read)
+--rcoArg (R1.Read) = return ([], R1.Read)
+rcoArg (R1.Read) = do
+  n <- freshTemp
+  return $ ([(n , R1.Read)] , R1.Var n)
 rcoArg (R1.Neg e) = do
   (bindings, e') <- rcoArg e
   n <- freshTemp
@@ -97,7 +100,7 @@ rcoArg (R1.Add eL eR) = do
 rcoArg (R1.Let n be e) = do
   (bindingsBE, be') <- rcoArg be
   (bindings, e') <- rcoArg e
-  return ((n, be') : (bindings ++ bindingsBE), e')
+  return (bindingsBE ++ [(n, be')] ++ bindings, e')
 
 makeBindings :: [(String, R1.Expr)] -> R1.Expr -> R1.Expr
 makeBindings ((b, be):bs) e =
@@ -151,7 +154,8 @@ siTail (C0.Return (C0.Plain a))    =
   [ (PX.Movq (siArg a) (PX.Reg PX.Rax))
   , (PX.Jmp "conclusion") ]
 siTail (C0.Return (C0.Read))       =
-  [ (PX.Jmp "conclusion") ]
+  [ (PX.Callq "read_int")
+  , (PX.Jmp "conclusion") ]
 siTail (C0.Return (C0.Neg a))      = undefined
   [ (PX.Movq (siArg a) (PX.Reg PX.Rax))
   , (PX.Negq (PX.Reg PX.Rax))
@@ -160,7 +164,7 @@ siTail (C0.Return (C0.Plus aL aR)) =
   [ (PX.Movq (siArg aL) (PX.Reg PX.Rax))
   , (PX.Addq (siArg aR) (PX.Reg PX.Rax))
   , (PX.Jmp "conclusion") ]
-siTail (C0.Seq assign t)     = siAssign assign ++ siTail t
+siTail (C0.Seq assign t) = siAssign assign ++ siTail t
 
 siAssign :: C0.Assign -> [PX.Instr]
 siAssign (C0.Assign s (C0.Plain a))    =
