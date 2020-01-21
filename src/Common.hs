@@ -1,5 +1,6 @@
 module Common where
 
+import Control.Exception
 import Prelude
 import System.Process
 import qualified Filesystem.Path.CurrentOS as FP
@@ -36,7 +37,10 @@ runBinary fp ins = withCreateProcess process $
      mbExitCode <- getProcessExitCode ph
      case mbExitCode of
        Nothing -> do
-         hPutStr hIn (show i ++ "\n")
+         -- The process is probably closed so just ignore
+         -- failure. Messy, I know
+         catch (hPutStr hIn (show i ++ "\n"))
+           (\(SomeException e) -> return ())
          loop hIn ph is
        Just x -> return $ exitCodeToInt x
    loop _ ph [] = do

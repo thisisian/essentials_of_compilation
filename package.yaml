@@ -26,6 +26,7 @@ dependencies:
 - parsec
 - process 
 - system-filepath
+- random
 
 ghc-options:
   - -Wall

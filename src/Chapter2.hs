@@ -244,17 +244,29 @@ patchInstructions (X.Program info [(label, bl)]) =
 patchInstructions _ = undefined
 
 intro :: Int -> (String, X.Block)
-intro fSize = ( "main", X.Block X.BInfo $
-  [ X.Pushq (X.Reg (X.Rbp))
-  , X.Movq (X.Reg (X.Rsp)) (X.Reg (X.Rbp))
-  , X.Subq (X.Num fSize) (X.Reg (X.Rsp))
-  , X.Jmp "start" ] )
+intro fSize
+  | fSize == 0 = ( "main", X.Block X.BInfo $
+    [ X.Pushq (X.Reg (X.Rbp))
+    , X.Movq (X.Reg (X.Rsp)) (X.Reg (X.Rbp))
+    , X.Jmp "start" ] )
+  | otherwise  = ( "main", X.Block X.BInfo $
+    [ X.Pushq (X.Reg (X.Rbp))
+    , X.Movq (X.Reg (X.Rsp)) (X.Reg (X.Rbp))
+    , X.Subq (X.Num fSize) (X.Reg (X.Rsp))
+    , X.Jmp "start" ] )
+
 
 conclusion :: Int -> (String, X.Block)
-conclusion fSize = ( "conclusion", X.Block X.BInfo $
-  [ X.Addq (X.Num fSize) (X.Reg (X.Rsp))
-  , X.Popq (X.Reg (X.Rbp))
-  , X.Retq ] )
+conclusion fSize
+  | fSize == 0 =
+    ( "conclusion", X.Block X.BInfo $
+      [ X.Popq (X.Reg (X.Rbp))
+      , X.Retq ] )
+  | otherwise  =
+    ( "conclusion", X.Block X.BInfo $
+      [ X.Addq (X.Num fSize) (X.Reg (X.Rsp))
+      , X.Popq (X.Reg (X.Rbp))
+      , X.Retq ] )
 
 pBlock :: X.Block -> X.Block
 pBlock (X.Block info instrs) = X.Block info (concatMap pInstrs instrs)
