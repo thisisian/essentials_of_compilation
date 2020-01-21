@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+
 import Test.HUnit
 import Text.Parsec hiding (parseTest)
 import Common
@@ -35,10 +37,10 @@ compileTest :: (Random b, Show b)
   -> (a -> String)     -- ^ Compiler
   -> String            -- ^ Program
   -> Test
-compileTest p i c prog = TestLabel ("") $ TestCase $ do
+compileTest p i c prog = TestLabel "" $ TestCase $ do
   gen <- getStdGen
   let input = randoms gen
-      expected =  (i input (p prog)) `mod` 256
+      expected =  i input (p prog) `mod` 256
   compileToFile p c prog "./test/testenv/test"
   actual <- runBinary "./test/testenv/test" input
   removeFile "./test/testenv/test.s"
@@ -148,6 +150,9 @@ ch2Tests = TestLabel "R1". TestList $
   , ch2CompileTest testExpr19
   , ch2CompileTest testExpr20
   , ch2CompileTest testExpr21
+  , ch2CompileTest testExpr22
+  , ch2CompileTest testExpr23
+  , ch2CompileTest testExpr24
   ]
 
 testExpr1 = "(+ 8 2)"
@@ -171,3 +176,6 @@ testExpr18 = "(let ([x (read)]) (+ (let ([y (read)]) (+ x (- y))) x))"
 testExpr19 = "(+ (let ([ x 1 ]) (+ x 2)) 3)"
 testExpr20 =  "(let ([x (read)]) (+ (let ([y (read)]) (+ x y)) (let ([y (read)]) (+ y x))))"
 testExpr21 = "3"
+testExpr22 = "(- (let ([x (+ 2 3)]) (- (+ x x))))"
+testExpr23 = "(- (read))"
+testExpr24 = "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"

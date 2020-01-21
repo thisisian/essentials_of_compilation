@@ -26,10 +26,10 @@ instance PrettyPrint Register where
 data Arg = Num Int | Reg Register | Deref Register Int
 
 instance PrettyPrint Arg where
-  prettyPrint (Num x) = '$':(show x)
+  prettyPrint (Num x) = '$': show x
   prettyPrint (Reg r) = prettyPrint r
   prettyPrint (Deref r off) =
-    (show off) ++ "(" ++ prettyPrint r ++ ")"
+    show off ++ "(" ++ prettyPrint r ++ ")"
 
 data Instr = Addq Arg Arg | Subq Arg Arg | Movq Arg Arg | Retq
            | Negq Arg | Callq String | Pushq Arg | Popq Arg

@@ -1,3 +1,4 @@
 .stack-work/
 essentials-of-compilation.cabal
 *~
+*.lock

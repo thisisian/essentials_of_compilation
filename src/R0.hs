@@ -101,10 +101,10 @@ pe (Pgrm e) = Pgrm $ peExpr e
 --      peExpr2 (Add (Num x) eL2)
 --    (eL2, eR2) -> (Add eL2 eR2)
 peExpr :: Expr -> Expr
-peExpr (Neg (Num n)) = Num (0 - n)
+peExpr (Neg (Num n)) = Num (negate n)
 peExpr (Neg (Add eL eR)) = peExpr (Add (Neg eL) (Neg eR))
 peExpr (Neg (Neg x)) = peExpr x
-peExpr (Add (Num x) (Num y)) = (Num (x+y))
+peExpr (Add (Num x) (Num y)) = Num (x+y)
 peExpr (Add (Num 0) e) = peExpr e
 peExpr (Add (Num x) (Add (Num y) e)) = peExpr (Add (Num (x+y)) e)
 peExpr (Add (Add a b) (Add c d)) = peExpr (Add a (Add b (Add c d)))
@@ -113,7 +113,7 @@ peExpr (Add e1 (Add (Num x) e2)) = peExpr (Add (Num x) (Add e1 e2))
 peExpr (Add e1@(Add _ _) e2) = peExpr (Add e2 e1)
 peExpr (Add eL eR) =
   case (peExpr eL, peExpr eR) of
-    (eL2, (Add (Num x) eR2)) ->
+    (eL2, Add (Num x) eR2) ->
       peExpr (Add (Num x) (Add eL2 eR2))
-    (eL2, eR2) -> (Add eL2 eR2)
+    (eL2, eR2) -> Add eL2 eR2
 peExpr e = e

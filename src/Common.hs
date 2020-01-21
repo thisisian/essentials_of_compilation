@@ -17,13 +17,17 @@ compileToFile
   -> FilePath      -- ^ Output file
   -> IO ()
 compileToFile p c prog fp = do
-  writeFile assF . c . p $ prog
-  putStrLn =<< readProcess "gcc"
-    ["-g", "./test/testenv/runtime.o", assF, "-o", fp] ""
+  writeFile ass . c . p $ prog
+  (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+      ["-g", "./test/testenv/runtime.o", ass, "-o", fp] ""
+  case exitCode of
+    (ExitFailure _) -> error $ stdOut
+    ExitSuccess ->
+      pure ()
  where
-  assF = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
+  ass = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
 
-runBinary :: (Show a) => FilePath -> [a] -> IO (Int)
+runBinary :: (Show a) => FilePath -> [a] -> IO Int
 runBinary fp ins = withCreateProcess process $
   \(Just hIn) _ _ ph -> do
     hSetBuffering hIn LineBuffering
@@ -40,14 +44,12 @@ runBinary fp ins = withCreateProcess process $
          -- The process is probably closed so just ignore
          -- failure. Messy, I know
          catch (hPutStr hIn (show i ++ "\n"))
-           (\(SomeException e) -> return ())
+           (\(SomeException _) -> return ())
          loop hIn ph is
        Just x -> return $ exitCodeToInt x
-   loop _ ph [] = do
+   loop _ ph [] =
      exitCodeToInt <$> waitForProcess ph
 
 exitCodeToInt :: ExitCode -> Int
-exitCodeToInt (ExitSuccess)   = 0
+exitCodeToInt ExitSuccess   = 0
 exitCodeToInt (ExitFailure n) = n
-
-intToExitCodeRange i = i `mod` 256
