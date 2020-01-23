@@ -174,7 +174,7 @@ allocateRegisters (PX.Program _ bs) = (X.Program info bs')
 alBlock :: PX.Block -> X.Block
 alBlock (PX.Block i is) =
   let storeLocs = colorGraph . PX.bInfoConflicts $ i
-  in trace ("\n"++show storeLocs++"\n") (X.Block X.BInfo (map (alInstr storeLocs) is))
+  in {-trace ("\n"++show storeLocs++"\n")-} (X.Block X.BInfo (map (alInstr storeLocs) is))
 
 alInstr :: M.Map String StoreLoc -> PX.Instr -> X.Instr
 alInstr m (PX.Addq aL aR) = (X.Addq (alArg m aL) (alArg m aR))
@@ -217,7 +217,7 @@ colorGraph g =
       $ regVerts
     coloring :: M.Map Vertex Color
     coloring = color g' needColors alreadyColored
-  in
+  in {-trace ("\nvarVets: " ++ show varVerts) -}
     M.fromList
     . mapMaybe
         (\(v, c) -> case lookup v vertexAssoc of

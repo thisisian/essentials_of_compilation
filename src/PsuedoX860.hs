@@ -34,7 +34,8 @@ data PInfo = PInfo { pInfoLocals :: [String] }
   deriving (Show, Eq)
 
 callerSaved :: Set Register
-callerSaved = S.fromList [Rax, Rdx, Rcx, Rdi, R8, R9, R10, R11]
+-- Note we omit Rax for now
+callerSaved = S.fromList [Rdx, Rcx, Rdi, R8, R9, R10, R11]
 
 writeArgs :: Instr -> Maybe (Set Arg)
 writeArgs (Addq aL aR) = Just (S.fromList [aL, aR])
