@@ -68,6 +68,3 @@ instance PrettyPrint Program where
 data PInfo = PInfo { frameSize :: Int }
 
 data BInfo = BInfo
-
-isReg (Reg _) = True
-isReg _       = False

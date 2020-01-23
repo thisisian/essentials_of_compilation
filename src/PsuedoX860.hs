@@ -34,8 +34,7 @@ data PInfo = PInfo { pInfoLocals :: [String] }
   deriving (Show, Eq)
 
 callerSaved :: Set Register
--- Note we omit Rax for now
-callerSaved = S.fromList [Rdx, Rcx, Rdi, R8, R9, R10, R11]
+callerSaved = S.fromList [Rax, Rdx, Rcx, Rdi, R8, R9, R10, R11]
 
 writeArgs :: Instr -> Maybe (Set Arg)
 writeArgs (Addq aL aR) = Just (S.fromList [aL, aR])
@@ -56,13 +55,16 @@ readArgs (Popq _)     = Nothing
 readArgs _            = Nothing
 
 isArithOp :: Instr -> Bool
-isArithOp (Addq _ _) = True
-isArithOp (Subq _ _) = True
-isArithOp (Negq _)   = True
-isArithOp _          = False
-toX860Arg (Num x) = X.Num x
-toX860Arg (Reg r) = X.Reg (toX860Reg r)
+isArithOp (Addq _ _)  = True
+isArithOp (Subq _ _)  = True
+isArithOp (Negq _)    = True
+isArithOp _           = False
+
+toX860Arg :: Arg -> X.Arg
+toX860Arg (Num x)     = X.Num x
+toX860Arg (Reg r)     = X.Reg (toX860Reg r)
 toX860Arg (Deref r x) = X.Deref (toX860Reg r) x
+toX860Arg (Var _)     = error $ "toX86: called with Var"
 
 toX860Reg :: Register -> X.Register
 toX860Reg Rsp = X.Rsp

@@ -19,7 +19,7 @@ compileToFile
 compileToFile p c prog fp = do
   writeFile ass . c . p $ prog
   (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
-      ["-g", "./test/testenv/runtime.o", ass, "-o", fp] ""
+      ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
   case exitCode of
     (ExitFailure _) -> error $ stdOut
     ExitSuccess ->
@@ -29,9 +29,11 @@ compileToFile p c prog fp = do
 
 runBinary :: (Show a) => FilePath -> [a] -> IO Int
 runBinary fp ins = withCreateProcess process $
-  \(Just hIn) _ _ ph -> do
-    hSetBuffering hIn LineBuffering
-    loop hIn ph ins
+  \mbHIn _ _ ph -> case mbHIn of
+    Just (hIn) -> do
+     hSetBuffering hIn LineBuffering
+     loop hIn ph ins
+    Nothing -> error $ "runBinary: Failed to start " ++ fp
   where
    process =
      (proc fp []) { std_in = CreatePipe

@@ -1,17 +1,17 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
 import Test.HUnit
-import Text.Parsec hiding (parseTest)
-import Common
 import System.Directory
 import System.Random
+
+import Common
 import qualified R0
 import qualified R1
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 
 main :: IO ()
-main = runTestTT ch3Tests >> pure ()
+main = runTestTT (TestList $ [ch1Tests, ch2Tests, ch3Tests]) >> pure ()
 
 parseTest :: (Show a) => (String -> a) -> String -> Test
 parseTest p input = TestCase $
@@ -59,8 +59,8 @@ exercise1Test input expected = TestCase $
     expected
     (show . R0.pe . R0.doParse $ input)
 
-r0Tests :: Test
-r0Tests = TestLabel "R0" . TestList $
+ch1Tests :: Test
+ch1Tests = TestLabel "R0" . TestList $
   [ parseTest R0.doParse "(+ 8 2)"
   , parseTest R0.doParse "(+ (+ (read) (- 4)) (read))"
   , parseTest R0.doParse "(+ (+ (+ (read) (- 9)) (- 4)) (- 2))"

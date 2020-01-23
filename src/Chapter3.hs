@@ -14,7 +14,6 @@ import Color
 import qualified R1
 import Data.List
 import Common
-import Debug.Trace
 import Control.Monad.State.Strict
 
 compile :: R1.Program -> String
@@ -120,48 +119,11 @@ buildInterfere' (la:las) (i:is) =
     return ()
 
   addRegisters la' = do
-    let rs = S.map PX.Reg PX.callerSaved
+    let rs = S.map PX.Reg (S.fromList regsToUse)
     mapM_ (\s -> addEdges s rs) la'
 
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
-
-
-
-
-
--- Jeez, just compare to the pure functional version:
---bIInterfere
---  :: [S.Set PX.Arg]
---  -> [PX.Instr]
---  -> M.Map PX.Arg (S.Set PX.Arg)
---  -> M.Map PX.Arg (S.Set PX.Arg)
---bIInterfere (la:las) (i:is) imap =
---  if PX.isArithOp i
---  then case PX.writeArg i of
---    Just var@(PX.Var _) ->
---      let
---        imapNew = M.unionWith S.union imap (mkEdges var (S.delete var la))
---      in bIInterfere las is imapNew
---    _ -> bIInterfere las is imap
---  else case i of
---    (PX.Callq _) ->
---      let
---        regMaps =
---          map (\r -> mkEdges (PX.Reg r) la) (S.toList PX.callerSaved)
---        imapNew = M.unionsWith S.union (imap : regMaps)
---      in bIInterfere las is imapNew
---    (PX.Movq v1@(PX.Var _) v2@(PX.Var _)) ->
---      let laRemoved = (S.delete v1 (S.delete v2 la))
---      in M.unionsWith S.union $
---        [imap, mkEdges v1 (laRemoved), (mkEdges v2 (laRemoved))]
---    _ -> bIInterfere las is imap
---bIInterfere [] [] imap = imap
---bIInterfere _ _ _ = error "Live sets and Instructions don't match"
-
-mkEdges :: (Ord a) => a -> S.Set a -> M.Map a (S.Set a)
-mkEdges a as =
-  M.unionWith S.union (M.singleton a as) (M.fromSet (\_ -> S.singleton a) as)
 
 {- Allocate Registers -}
 
@@ -174,7 +136,7 @@ allocateRegisters (PX.Program _ bs) = (X.Program info bs')
 alBlock :: PX.Block -> X.Block
 alBlock (PX.Block i is) =
   let storeLocs = colorGraph . PX.bInfoConflicts $ i
-  in {-trace ("\n"++show storeLocs++"\n")-} (X.Block X.BInfo (map (alInstr storeLocs) is))
+  in (X.Block X.BInfo (map (alInstr storeLocs) is))
 
 alInstr :: M.Map String StoreLoc -> PX.Instr -> X.Instr
 alInstr m (PX.Addq aL aR) = (X.Addq (alArg m aL) (alArg m aR))
@@ -184,6 +146,7 @@ alInstr m (PX.Negq a)     = (X.Negq (alArg m a))
 alInstr _ (PX.Retq)       = X.Retq
 alInstr _ (PX.Callq s)    = X.Callq s
 alInstr _ (PX.Jmp s)      = X.Jmp s
+alInstr _ i               = error $ "alInstr: " ++ show i
 
 alArg :: M.Map String StoreLoc -> PX.Arg -> X.Arg
 alArg m (PX.Var s) = case M.lookup s m of
@@ -197,6 +160,7 @@ alArg _ (PX.Reg r) = (X.Reg (PX.toX860Reg r))
 data StoreLoc = Reg PX.Register | Stack Int
   deriving (Show)
 
+-- Returns list of Strings to StoreLocs and frameSize
 colorGraph :: (M.Map PX.Arg (S.Set PX.Arg)) -> (M.Map String StoreLoc)
 colorGraph g =
   let
@@ -213,17 +177,24 @@ colorGraph g =
     alreadyColored :: (M.Map Vertex Color)
     alreadyColored =
       M.fromList
-      . map (\(v, (PX.Reg a)) -> (v, fromJust . colorFromReg $ a))
+      . mapMaybe
+          (\(v, a) -> case a of
+              (PX.Reg r) -> case colorFromReg r of
+                Nothing -> Nothing
+                Just n  -> Just (v, n)
+              _ -> error $ "colorGraph: Don't expect " ++ show a ++
+                   " in the regVerts list.")
       $ regVerts
     coloring :: M.Map Vertex Color
     coloring = color g' needColors alreadyColored
-  in {-trace ("\nvarVets: " ++ show varVerts) -}
+  in
     M.fromList
     . mapMaybe
         (\(v, c) -> case lookup v vertexAssoc of
-            Just (PX.Reg r) -> Nothing
+            Just (PX.Reg _) -> Nothing
             Just (PX.Var s) -> Just (s, storeLocFromColor c)
-            Nothing         -> Nothing)
+            Nothing         -> Nothing
+            _               -> error $ "Found " ++ show v ++ "in vertexAssoc")
     . M.toList
     $ coloring
 
@@ -233,15 +204,11 @@ toGraph
 toGraph conflicts = graphFromEdges .
   map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
 
+regsToUse :: [PX.Register]
+regsToUse = [ PX.Rcx ]
+
 regIntAssoc :: [(Int, PX.Register)]
-regIntAssoc = [ (0, PX.Rdx)
-              , (1, PX.Rcx)
-              , (2, PX.Rsi)
-              , (3, PX.Rdi)
-              , (4, PX.R8)
-              , (5, PX.R9)
-              , (6, PX.R10)
-              , (7, PX.R11) ]
+regIntAssoc = zip [0..] regsToUse
 
 storeLocFromColor :: Int -> StoreLoc
 storeLocFromColor n = case lookup n regIntAssoc of
@@ -251,77 +218,31 @@ storeLocFromColor n = case lookup n regIntAssoc of
 colorFromReg :: PX.Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
-exampleProblem :: IO ()
-exampleProblem = do
-  let after_UncoverLive = allocateRegisters . buildInterference . uncoverLive $ after_instr_selection
-  putStrLn $ prettyPrint after_UncoverLive
-
-
-exampleProgram :: String
-exampleProgram = "(let ([v 1]) (let ([w 46]) (let ([x (+ v 7)]) (let ([y (+ 4 x)]) (let ([z (+ x w)]) (+ z (- y)))))))"
-
--- (let ([v 1])
--- (let ([w 46])
--- (let ([x (+ v 7)])
--- (let ([y (+ 4 x)])
--- (let ([z (+ x w)])
--- (+ z (- y)))))))
-
--- (let ([v 1])
--- (let ([w 46])
--- (let ([_temp0 (+ v 7)])
--- (let ([x _temp0])
--- (let ([_temp1 (+ 4 x)])
--- (let ([y _temp1])
--- (let ([_temp2 (+ x w)])
--- (let ([z _temp2])
--- (let ([_temp3 (- y)])
---       (+ z _temp3))))))))))
-
---  ,fromList ["v"]
---  ,fromList ["v","w"]
---  ,fromList ["w"]
---  ,fromList ["w","x"]
---  ,fromList ["w","x"]
---  ,fromList ["w","x","y"]
---  ,fromList ["w","y"]  -- WRONG
-
---  ,fromList ["t.1","z"]
---  ,fromList ["t.1","z"]
---  ,fromList ["t.1"]
---  ,fromList []
---  ,fromList []
-
---fromList [Var "v"]
---fromList [Var "v",Var "w"]
---fromList [Var "w",Var "x"]
---fromList [Var "w",Var "x"]
---fromList [Var "w",Var "x",Var "y"]
---fromList [Var "w",Var "x",Var "y"]
---fromList [Var "w",Var "y",Var "z"]
---fromList [Var "y",Var "z"]
---fromList [Var "t.1",Var "z"]
---fromList [Var "t.1",Var "z"]
---fromList [Var "t.1"]
---fromList []
---fromList []
-
-
-
-after_instr_selection =
-  (PX.Program
-    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
-    [("start",PX.Block (PX.BInfo {PX.bInfoLiveAfterSets = [], PX.bInfoConflicts = M.fromList []})
-  [PX.Movq (PX.Num 1) (PX.Var "v")        --
-  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
-  ,PX.Movq (PX.Var "v") (PX.Var "x")      --
-  ,PX.Addq (PX.Num 7) (PX.Var "x")        --
-  ,PX.Movq (PX.Var "x") (PX.Var "y")      --
-  ,PX.Addq (PX.Num 4) (PX.Var "y")        --
-  ,PX.Movq (PX.Var "x") (PX.Var "z")      --
-  ,PX.Addq (PX.Var "w") (PX.Var "z")      --
-  ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
-  ,PX.Negq (PX.Var "t.1")                 --
-  ,PX.Movq (PX.Var "z") (PX.Reg PX.Rax)   --
-  ,PX.Addq (PX.Var "t.1") (PX.Reg PX.Rax) --
-  ,PX.Jmp "conclusion"])])                --
+--test :: IO ()
+--test = do
+--  let parsed = R1.doParse exampleProgram
+--      rcod   = rco parsed
+--      explicate = explicateControl rcod
+--      sel = selectInstructions explicate
+--      uncover = uncoverLive sel
+--      inter = buildInterference uncover
+--      alloc = allocateRegisters inter
+--      patch = patchInstructions alloc
+--
+--exampleProgram =
+--  (PX.Program
+--    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
+--    [("start",PX.Block (PX.BInfo {PX.bInfoLiveAfterSets = [], PX.bInfoConflicts = M.fromList []})
+--  [PX.Movq (PX.Num 1) (PX.Var "v")        --
+--  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
+--  ,PX.Movq (PX.Var "v") (PX.Var "x")      --
+--  ,PX.Addq (PX.Num 7) (PX.Var "x")        --
+--  ,PX.Movq (PX.Var "x") (PX.Var "y")      --
+--  ,PX.Addq (PX.Num 4) (PX.Var "y")        --
+--  ,PX.Movq (PX.Var "x") (PX.Var "z")      --
+--  ,PX.Addq (PX.Var "w") (PX.Var "z")      --
+--  ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
+--  ,PX.Negq (PX.Var "t.1")                 --
+--  ,PX.Movq (PX.Var "z") (PX.Reg PX.Rax)   --
+--  ,PX.Addq (PX.Var "t.1") (PX.Reg PX.Rax) --
+--  ,PX.Jmp "conclusion"])])                --
