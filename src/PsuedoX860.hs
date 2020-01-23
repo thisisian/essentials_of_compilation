@@ -59,29 +59,32 @@ isArithOp (Addq _ _) = True
 isArithOp (Subq _ _) = True
 isArithOp (Negq _)   = True
 isArithOp _          = False
+toX860Arg (Num x) = X.Num x
+toX860Arg (Reg r) = X.Reg (toX860Reg r)
+toX860Arg (Deref r x) = X.Deref (toX860Reg r) x
 
-toX860 :: Register -> X.Register
-toX860 Rsp = X.Rsp
-toX860 Rbp = X.Rbp
-toX860 Rax = X.Rax
-toX860 Rbx = X.Rbx
-toX860 Rcx = X.Rcx
-toX860 Rdx = X.Rdx
-toX860 Rsi = X.Rsi
-toX860 Rdi = X.Rdi
-toX860 R8  = X.R8
-toX860 R9  = X.R9
-toX860 R10 = X.R10
-toX860 R11 = X.R11
-toX860 R12 = X.R12
-toX860 R13 = X.R13
-toX860 R14 = X.R14
-toX860 R15 = X.R15
+toX860Reg :: Register -> X.Register
+toX860Reg Rsp = X.Rsp
+toX860Reg Rbp = X.Rbp
+toX860Reg Rax = X.Rax
+toX860Reg Rbx = X.Rbx
+toX860Reg Rcx = X.Rcx
+toX860Reg Rdx = X.Rdx
+toX860Reg Rsi = X.Rsi
+toX860Reg Rdi = X.Rdi
+toX860Reg R8  = X.R8
+toX860Reg R9  = X.R9
+toX860Reg R10 = X.R10
+toX860Reg R11 = X.R11
+toX860Reg R12 = X.R12
+toX860Reg R13 = X.R13
+toX860Reg R14 = X.R14
+toX860Reg R15 = X.R15
 
 isVar :: Arg -> Bool
 isVar (Var _) = True
 isVar _ = False
 
--- Incorrect -- kept cos I need it to compile
-writeArg :: Instr -> Maybe Arg
-writeArg _ = error $ "To remove"
+isReg :: Arg -> Bool
+isReg (Reg _) = True
+isReg _       = False
