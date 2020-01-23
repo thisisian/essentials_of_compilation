@@ -8,9 +8,10 @@ import System.Random
 import qualified R0
 import qualified R1
 import qualified Chapter2 as Ch2
+import qualified Chapter3 as Ch3
 
 main :: IO ()
-main = runTestTT ch2Tests >> pure ()
+main = runTestTT ch3Tests >> pure ()
 
 parseTest :: (Show a) => (String -> a) -> String -> Test
 parseTest p input = TestCase $
@@ -111,8 +112,7 @@ ch2CompileTest :: String -> Test
 ch2CompileTest =
   compileTest R1.doParse R1.interp Ch2.compile
 
-
-ch2Tests = TestLabel "R1". TestList $
+ch2Tests = TestLabel "Ch1". TestList $
   [ interpTest R1.doParse (R1.interp []) testExpr10 42
   , interpTest R1.doParse (R1.interp []) testExpr11 42
   , interpTest R1.doParse (R1.interp []) testExpr12 42
@@ -153,8 +153,39 @@ ch2Tests = TestLabel "R1". TestList $
   , ch2CompileTest testExpr22
   , ch2CompileTest testExpr23
   , ch2CompileTest testExpr24
+  , ch2CompileTest testExpr25
   ]
 
+ch3CompileTest :: String -> Test
+ch3CompileTest =
+  compileTest R1.doParse R1.interp Ch3.compile
+
+ch3Tests = TestLabel "Ch2". TestList $
+  [ ch3CompileTest testExpr1
+  , ch3CompileTest testExpr2
+  , ch3CompileTest testExpr3
+  , ch3CompileTest testExpr4
+  , ch3CompileTest testExpr5
+  , ch3CompileTest testExpr6
+  , ch3CompileTest testExpr7
+  , ch3CompileTest testExpr8
+  , ch3CompileTest testExpr9
+  , ch3CompileTest testExpr10
+  , ch3CompileTest testExpr11
+  , ch3CompileTest testExpr12
+  , ch3CompileTest testExpr13
+  , ch3CompileTest testExpr14
+  , ch3CompileTest testExpr15
+  , ch3CompileTest testExpr16
+  , ch3CompileTest testExpr17
+  , ch3CompileTest testExpr18
+  , ch3CompileTest testExpr19
+  , ch3CompileTest testExpr20
+  , ch3CompileTest testExpr21
+  , ch3CompileTest testExpr22
+  , ch3CompileTest testExpr23
+  , ch3CompileTest testExpr24
+  ]
 testExpr1 = "(+ 8 2)"
 testExpr2 = "(+ (read) 2)"
 testExpr3 = "(+ (read) (read))"
@@ -179,3 +210,4 @@ testExpr21 = "3"
 testExpr22 = "(- (let ([x (+ 2 3)]) (- (+ x x))))"
 testExpr23 = "(- (read))"
 testExpr24 = "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
+testExpr25 = "(let ([x 5]) x)"

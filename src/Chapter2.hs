@@ -82,7 +82,6 @@ rcoExpr (R1.Let name be e) = do
 rcoArg :: R1.Expr -> State Int ([(String, R1.Expr)], R1.Expr)
 rcoArg (R1.Num x) = return ([], R1.Num x)
 rcoArg (R1.Var name) = return ([], R1.Var name)
---rcoArg (R1.Read) = return ([], R1.Read)
 rcoArg R1.Read = do
   n <- freshTemp
   return ([(n , R1.Read)] , R1.Var n)
@@ -146,7 +145,7 @@ selectInstructions :: C0.Program -> PX.Program
 selectInstructions (C0.Pgrm (C0.Locals vs) [(l, t)]) =
   PX.Program
     (PX.PInfo { PX.pInfoLocals = vs })
-    [(l, PX.Block PX.BInfo (siTail t))]
+    [(l, PX.Block PX.emptyBInfo (siTail t))]
 selectInstructions (C0.Pgrm _ _) = error "Expected only one label"
 
 siTail :: C0.Tail -> [PX.Instr]
@@ -207,6 +206,7 @@ ahBlock m (PX.Block _ instrs) =
 
 ahInstr :: M.Map String Int -> PX.Instr -> X.Instr
 ahInstr m (PX.Addq aL aR) = X.Addq (ahArg m aL) (ahArg m aR)
+ahInstr m (PX.Subq aL aR) = X.Subq (ahArg m aL) (ahArg m aR)
 ahInstr m (PX.Movq aL aR) = X.Movq (ahArg m aL) (ahArg m aR)
 ahInstr _ PX.Retq       = X.Retq
 ahInstr m (PX.Negq a)     = X.Negq (ahArg m a)
