@@ -24,11 +24,12 @@ data Program = Program PInfo [(String, Block)]
   deriving (Show, Eq)
 
 data BInfo = BInfo { bInfoLiveAfterSets :: [Set Arg]
-                   , bInfoConflicts     :: M.Map Arg (Set Arg) }
+                   , bInfoConflicts     :: M.Map Arg (Set Arg)
+                   , bInfoMoveRelated   :: M.Map Arg (Set Arg) }
   deriving (Show, Eq)
 
 emptyBInfo :: BInfo
-emptyBInfo = BInfo [] M.empty
+emptyBInfo = BInfo [] M.empty M.empty
 
 data PInfo = PInfo { pInfoLocals :: [String] }
   deriving (Show, Eq)

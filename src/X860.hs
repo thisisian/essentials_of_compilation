@@ -4,6 +4,7 @@ import Common
 
 data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
               | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+  deriving (Ord, Eq)
 
 instance PrettyPrint Register where
   prettyPrint Rsp = "%rsp"
@@ -24,6 +25,7 @@ instance PrettyPrint Register where
   prettyPrint R15 = "%r15"
 
 data Arg = Num Int | Reg Register | Deref Register Int
+  deriving (Eq, Ord)
 
 instance PrettyPrint Arg where
   prettyPrint (Num x) = '$': show x

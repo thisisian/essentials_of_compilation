@@ -2,7 +2,9 @@ module Chapter3 where
 
 import qualified PsuedoX860 as PX
 import qualified X860 as X
+import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Map (Map)
 import qualified Data.Map as M
 import Chapter2 ( patchInstructions, selectInstructions
                 , uncoverLocals, explicateControl
@@ -21,6 +23,7 @@ compile =
   prettyPrint
   . patchInstructions
   . allocateRegisters
+  . buildMoveBias
   . buildInterference
   . uncoverLive
   . selectInstructions
@@ -78,13 +81,13 @@ bIBlock (PX.Block i' is) = (PX.Block i is)
 buildInterfere
   :: [S.Set PX.Arg]
   -> [PX.Instr]
-  -> M.Map PX.Arg (S.Set PX.Arg)
+  -> Map PX.Arg (Set PX.Arg)
 buildInterfere s i = execState (buildInterfere' s i) M.empty
 
 buildInterfere'
   :: [S.Set PX.Arg]
   -> [PX.Instr]
-  -> State (M.Map PX.Arg (S.Set PX.Arg)) ()
+  -> State (Map PX.Arg (S.Set PX.Arg)) ()
 buildInterfere' (la:las) (i:is) =
   case i of
     (PX.Addq _ s@(PX.Var _)) -> do
@@ -125,6 +128,27 @@ buildInterfere' (la:las) (i:is) =
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
 
+{- Build Move Biased Graph -}
+
+buildMoveBias :: PX.Program -> PX.Program
+buildMoveBias (PX.Program i bs) = (PX.Program i bs')
+ where
+   bs' = map (\(l, b) -> (l, bMvBBlock b)) bs
+   bMvBBlock (PX.Block i' is) =
+     (PX.Block i' {PX.bInfoMoveRelated = buildMvBGraph is} is)
+
+buildMvBGraph :: [PX.Instr] -> Map PX.Arg (Set PX.Arg)
+buildMvBGraph is = foldr bld M.empty is
+ where
+  bld i acc =
+    case i of
+      (PX.Movq v1@(PX.Var _) v2@(PX.Var _)) ->
+        M.unionWith S.union
+          (M.fromList [(v1, S.singleton v2), (v2, S.singleton v1)])
+          acc
+      _ -> acc
+
+
 {- Allocate Registers -}
 
 allocateRegisters :: PX.Program -> X.Program
@@ -135,7 +159,10 @@ allocateRegisters (PX.Program _ bs) = (X.Program info bs')
 
 alBlock :: PX.Block -> X.Block
 alBlock (PX.Block i is) =
-  let storeLocs = colorGraph . PX.bInfoConflicts $ i
+  let storeLocs =
+        colorGraph
+          (PX.bInfoConflicts i)
+          (PX.bInfoMoveRelated i)
   in (X.Block X.BInfo (map (alInstr storeLocs) is))
 
 alInstr :: M.Map String StoreLoc -> PX.Instr -> X.Instr
@@ -161,19 +188,25 @@ data StoreLoc = Reg PX.Register | Stack Int
   deriving (Show)
 
 -- Returns list of Strings to StoreLocs and frameSize
-colorGraph :: (M.Map PX.Arg (S.Set PX.Arg)) -> (M.Map String StoreLoc)
-colorGraph g =
+colorGraph
+  :: (Map PX.Arg (Set PX.Arg))
+  -> (Map PX.Arg (Set PX.Arg))
+  -> (Map String StoreLoc)
+colorGraph iList mvBList  =
   let
-    (g', nodeFromVertex, _) = toGraph g
+    (g', nodeFromVertex, vertexFromNode) = toGraph iList
     vertexAssoc =
       map (\v -> let (_, a, _) = nodeFromVertex v in (v, a))
       . vertices
       $ g'
     regVerts :: [(Vertex, PX.Arg)]
     regVerts = filter (\(_, a) -> PX.isReg a) vertexAssoc
+
     varVerts = (vertexAssoc \\ regVerts)
+
     needColors :: S.Set Vertex
     needColors = S.fromList . map fst $ varVerts
+
     alreadyColored :: (M.Map Vertex Color)
     alreadyColored =
       M.fromList
@@ -185,8 +218,23 @@ colorGraph g =
               _ -> error $ "colorGraph: Don't expect " ++ show a ++
                    " in the regVerts list.")
       $ regVerts
+
+    preferMap' :: (M.Map Vertex (Set Vertex))
+    preferMap' =
+      M.fromList
+      . map
+          (\(var1, vs) -> case vertexFromNode var1 of
+              Nothing ->
+                error $ "Could not find " ++ show var1 ++ " in graph"
+              Just v ->
+                let
+                  vs' = S.map (fromJust . vertexFromNode) vs :: Set Vertex
+                in (v, vs'))
+      . M.toList
+      $ mvBList
+
     coloring :: M.Map Vertex Color
-    coloring = color g' needColors alreadyColored
+    coloring = color g' preferMap' needColors alreadyColored
   in
     M.fromList
     . mapMaybe
@@ -205,7 +253,7 @@ toGraph conflicts = graphFromEdges .
   map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
 
 regsToUse :: [PX.Register]
-regsToUse = [ PX.Rcx ]
+regsToUse = [ PX.Rdx, PX.Rcx ]
 
 regIntAssoc :: [(Int, PX.Register)]
 regIntAssoc = zip [0..] regsToUse
@@ -219,20 +267,19 @@ colorFromReg :: PX.Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
 --test :: IO ()
---test = do
---  let parsed = R1.doParse exampleProgram
---      rcod   = rco parsed
---      explicate = explicateControl rcod
---      sel = selectInstructions explicate
---      uncover = uncoverLive sel
---      inter = buildInterference uncover
---      alloc = allocateRegisters inter
---      patch = patchInstructions alloc
+--test =
+--  let
+--    uncover = uncoverLive exampleProgram
+--    inter = buildInterference uncover
+--    moveBias = buildMoveBias inter
+--    alloc = allocateRegisters moveBias
+--    patch = patchInstructions alloc
+--  in putStrLn $ prettyPrint patch
 --
 --exampleProgram =
 --  (PX.Program
 --    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
---    [("start",PX.Block (PX.BInfo {PX.bInfoLiveAfterSets = [], PX.bInfoConflicts = M.fromList []})
+--    [("start",PX.Block PX.emptyBInfo
 --  [PX.Movq (PX.Num 1) (PX.Var "v")        --
 --  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
 --  ,PX.Movq (PX.Var "v") (PX.Var "x")      --

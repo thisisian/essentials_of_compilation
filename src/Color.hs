@@ -12,14 +12,30 @@ type Color = Int
 
 color
   :: Graph
-  -> S.Set Vertex       -- ^ Vertices not yet to colored
+  -> Map Vertex (Set Vertex) -- ^ Prefer to color connected vertices alike
+  -> S.Set Vertex            -- ^ Vertices not yet to colored
   -> Map Vertex Color
   -> Map Vertex Color
-color g vs cmap = case maxSat vs of
+color g pMap vs cmap = case maxSat vs of
   Nothing -> cmap
-  Just (v, sat) ->
-    let clr = minFree sat
-    in color g (S.delete v vs) (M.insert v clr cmap)
+  Just (v, sat) -> case M.lookup v pMap of
+    Nothing ->
+      let clr = minFree sat
+      in color g pMap (S.delete v vs) (M.insert v clr cmap)
+    Just preferedVs ->
+      let
+        preferredColors =
+          S.difference
+            (S.fromList
+            . mapMaybe (\p -> M.lookup p cmap)
+            $ (S.toList preferedVs))
+            sat
+      in case S.lookupMin preferredColors of
+        Nothing ->
+          let clr = minFree sat
+          in color g pMap (S.delete v vs) (M.insert v clr cmap)
+        Just clr ->
+          color g pMap (S.delete v vs) (M.insert v clr cmap)
  where
 
   maxSat :: S.Set Vertex -> Maybe (Vertex, Set Color)
