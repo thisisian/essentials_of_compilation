@@ -283,5 +283,5 @@ pInstrs (X.Addq (X.Deref regL offL) (X.Deref regR offR)) =
 pInstrs (X.Subq (X.Deref regL offL) (X.Deref regR offR)) =
   [ X.Movq (X.Deref regL offL) (X.Reg X.Rax)
   , X.Subq (X.Reg X.Rax) (X.Deref regR offR) ]
-pInstrs i@(X.Movq a1 a2) = if a1 == a2 then [] else [i]
+pInstrs i@(X.Movq a1 a2) = [i | not a1 == a2]
 pInstrs i = [i]

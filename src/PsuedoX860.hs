@@ -65,7 +65,7 @@ toX860Arg :: Arg -> X.Arg
 toX860Arg (Num x)     = X.Num x
 toX860Arg (Reg r)     = X.Reg (toX860Reg r)
 toX860Arg (Deref r x) = X.Deref (toX860Reg r) x
-toX860Arg (Var _)     = error $ "toX86: called with Var"
+toX860Arg (Var _)     = error "toX86: called with Var"
 
 toX860Reg :: Register -> X.Register
 toX860Reg Rsp = X.Rsp

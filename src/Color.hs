@@ -27,8 +27,8 @@ color g pMap vs cmap = case maxSat vs of
         preferredColors =
           S.difference
             (S.fromList
-            . mapMaybe (\p -> M.lookup p cmap)
-            $ (S.toList preferedVs))
+            . mapMaybe (`M.lookup` cmap)
+            $ S.toList preferedVs)
             sat
       in case S.lookupMin preferredColors of
         Nothing ->
@@ -42,7 +42,7 @@ color g pMap vs cmap = case maxSat vs of
   maxSat vs' = foldr findMax Nothing vs'
     where
       findMax
-         :: (Vertex)
+         :: Vertex
          -> Maybe (Vertex, Set Color) -> Maybe (Vertex, Set Color)
       findMax a acc = case acc of
         Nothing -> Just (a, saturation a)
@@ -55,12 +55,12 @@ color g pMap vs cmap = case maxSat vs of
   saturation :: Vertex -> Set Color
   saturation v =
     S.fromList
-    . mapMaybe (\n -> M.lookup n $ cmap)
+    . mapMaybe (`M.lookup` cmap)
     . neighbors
     $ v
 
   minFree sat = case S.lookupMax sat of
     Nothing -> 0
-    Just n -> S.findMin ((S.fromList [0..(n+1)]) `S.difference` sat)
+    Just n -> S.findMin (S.fromList [0..(n+1)] `S.difference` sat)
 
   neighbors v = g ! v

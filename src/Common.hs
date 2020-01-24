@@ -21,7 +21,7 @@ compileToFile p c prog fp = do
   (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
       ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
   case exitCode of
-    (ExitFailure _) -> error $ stdOut
+    (ExitFailure _) -> error stdOut
     ExitSuccess ->
       pure ()
  where
@@ -30,7 +30,7 @@ compileToFile p c prog fp = do
 runBinary :: (Show a) => FilePath -> [a] -> IO Int
 runBinary fp ins = withCreateProcess process $
   \mbHIn _ _ ph -> case mbHIn of
-    Just (hIn) -> do
+    Just hIn -> do
      hSetBuffering hIn LineBuffering
      loop hIn ph ins
     Nothing -> error $ "runBinary: Failed to start " ++ fp
