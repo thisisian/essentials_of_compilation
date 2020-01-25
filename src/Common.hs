@@ -5,6 +5,11 @@ import Prelude
 import System.Process
 import qualified Filesystem.Path.CurrentOS as FP
 import System.Exit
+import Data.Set (Set)
+import qualified Data.Set as S
+import Data.Map (Map)
+import Data.Graph
+import qualified Data.Map as M
 import GHC.IO.Handle
 
 class PrettyPrint a where
@@ -55,3 +60,9 @@ runBinary fp ins = withCreateProcess process $
 exitCodeToInt :: ExitCode -> Int
 exitCodeToInt ExitSuccess   = 0
 exitCodeToInt (ExitFailure n) = n
+
+mapSetToGraph :: (Ord a)
+  => Map a (Set a)
+  -> (Graph, Vertex -> ((), a, [a]), a -> Maybe Vertex)
+mapSetToGraph m = graphFromEdges .
+  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m

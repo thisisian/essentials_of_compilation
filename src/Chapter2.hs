@@ -9,6 +9,7 @@ import qualified R1
 import qualified C0
 import qualified PsuedoX860 as PX
 import qualified X860 as X
+import Data.Maybe
 
 import Common
 
@@ -190,49 +191,63 @@ siArg :: C0.Arg -> PX.Arg
 siArg (C0.Num x) = PX.Num x
 siArg (C0.Var s) = PX.Var s
 
-{- Assign Homes -}
+{- Assign Homes2 -}
 
 assignHomes :: PX.Program -> X.Program
-assignHomes (PX.Program info' bs') =
-  X.Program info bs
- where
-  info = X.PInfo (frameSize info')
-  bs = map (\(l, b) -> (l, ahBlock locMap b)) bs'
-  locMap = buildLocMap info'
+assignHomes p =
+  assignHomes' (createLocMap p) p
 
-ahBlock :: M.Map String Int -> PX.Block -> X.Block
+assignHomes'
+  :: M.Map String PX.StoreLoc
+  -> PX.Program
+  -> X.Program
+assignHomes' locMap (PX.Program _ bs) =
+  X.Program info' bs'
+ where
+  info' = X.PInfo (frameSize locMap)
+  bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
+
+ahBlock :: M.Map String PX.StoreLoc -> PX.Block -> X.Block
 ahBlock m (PX.Block _ instrs) =
   X.Block X.BInfo (map (ahInstr m) instrs)
 
-ahInstr :: M.Map String Int -> PX.Instr -> X.Instr
+ahInstr :: M.Map String PX.StoreLoc -> PX.Instr -> X.Instr
 ahInstr m (PX.Addq aL aR) = X.Addq (ahArg m aL) (ahArg m aR)
 ahInstr m (PX.Subq aL aR) = X.Subq (ahArg m aL) (ahArg m aR)
 ahInstr m (PX.Movq aL aR) = X.Movq (ahArg m aL) (ahArg m aR)
-ahInstr _ PX.Retq       = X.Retq
+ahInstr _ PX.Retq         = X.Retq
 ahInstr m (PX.Negq a)     = X.Negq (ahArg m a)
 ahInstr _ (PX.Callq s)    = X.Callq s
 ahInstr _ (PX.Jmp s)    =   X.Jmp s
 ahInstr _ i = error $ "Unimplemented: " ++ show i
 
-ahArg :: M.Map String Int -> PX.Arg -> X.Arg
+ahArg :: M.Map String PX.StoreLoc -> PX.Arg -> X.Arg
 ahArg _ (PX.Num x) = X.Num x
 ahArg m (PX.Var s) = case M.lookup s m of
   Nothing -> error $ "Assign homes: Variable " ++ s ++ " not found in map."
-  Just n  -> X.Deref X.Rbp n
+  Just (PX.RegLoc r) -> X.Reg (PX.toX860Reg r)
+  Just (PX.Stack n)  -> X.Deref X.Rbp n
 ahArg _ (PX.Reg PX.Rax) = X.Reg X.Rax
 ahArg _ _ = undefined
 
-buildLocMap :: PX.PInfo -> M.Map String Int
-buildLocMap pInfo = M.fromList (zip locals [-8,-16..])
- where locals = PX.pInfoLocals pInfo
+createLocMap :: PX.Program -> M.Map String PX.StoreLoc
+createLocMap (PX.Program info _) =
+  M.fromList (zip locals (map PX.Stack [-8,-16..]))
+ where locals = PX.pInfoLocals info
 
-frameSize :: PX.PInfo -> Int
-frameSize pInfo =
+frameSize :: M.Map String PX.StoreLoc -> Int
+frameSize locMap =
   if nBytes `mod` 16 == 0
   then nBytes
   else 16 * ((nBytes `div` 16) + 1)
- where nBytes = 8 * length locals
-       locals = PX.pInfoLocals pInfo
+ where
+   nBytes =  negate
+             . foldr (\n acc -> if n < acc then n else acc) 0
+             . mapMaybe (\x -> case x of
+                          (PX.Stack n) -> Just n
+                          _            -> Nothing)
+             . M.elems
+             $ locMap
 
 {- Patch Instructions -}
 
@@ -256,7 +271,6 @@ intro fSize
     , X.Movq (X.Reg X.Rsp) (X.Reg X.Rbp)
     , X.Subq (X.Num fSize) (X.Reg X.Rsp)
     , X.Jmp "start" ] )
-
 
 conclusion :: Int -> (String, X.Block)
 conclusion fSize
@@ -283,5 +297,5 @@ pInstrs (X.Addq (X.Deref regL offL) (X.Deref regR offR)) =
 pInstrs (X.Subq (X.Deref regL offL) (X.Deref regR offR)) =
   [ X.Movq (X.Deref regL offL) (X.Reg X.Rax)
   , X.Subq (X.Reg X.Rax) (X.Deref regR offR) ]
-pInstrs i@(X.Movq a1 a2) = [i | not a1 == a2]
+pInstrs i@(X.Movq a1 a2) = [i | not $ a1 == a2]
 pInstrs i = [i]

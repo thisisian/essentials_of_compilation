@@ -5,6 +5,9 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified X860 as X
 
+data StoreLoc = RegLoc Register | Stack Int
+  deriving (Show)
+
 data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
               | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Show, Eq, Ord)

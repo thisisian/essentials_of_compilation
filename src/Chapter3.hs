@@ -1,11 +1,12 @@
 module Chapter3 where
-
+h
 import qualified PsuedoX860 as PX
 import qualified X860 as X
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Map (Map)
 import qualified Data.Map as M
+import qualified Chapter2 as Ch2
 import Chapter2 ( patchInstructions, selectInstructions
                 , uncoverLocals, explicateControl
                 , rco, uniquify )
@@ -23,7 +24,6 @@ compile =
   prettyPrint
   . patchInstructions
   . allocateRegisters
-  . buildMoveBias
   . buildInterference
   . uncoverLive
   . selectInstructions
@@ -37,10 +37,10 @@ compile =
 
 uncoverLive :: PX.Program -> PX.Program
 uncoverLive (PX.Program i bs) =
-  PX.Program i (map (\(l, b) -> (l, uLBlock b)) bs)
+  (PX.Program i (map (\(l, b) -> (l, uLBlock b)) bs))
 
 uLBlock :: PX.Block -> PX.Block
-uLBlock (PX.Block _ is) = PX.Block info is
+uLBlock (PX.Block _ is) = (PX.Block info is)
  where
    info = PX.emptyBInfo { PX.bInfoLiveAfterSets = mkLiveAfterSets is}
 
@@ -48,10 +48,10 @@ mkLiveAfterSets :: [PX.Instr] -> [S.Set PX.Arg]
 mkLiveAfterSets is = reverse $ mkSets S.empty (reverse is)
 
 mkSets :: S.Set PX.Arg -> [PX.Instr] -> [S.Set PX.Arg]
-mkSets set (i:is) = set : mkSets set' is
+mkSets set (i:is) = set : (mkSets set' is)
  where
    set' =
-     S.filter PX.isVar $ (set S.\\ w i) `S.union` r i
+     S.filter (PX.isVar) $ (set S.\\ w i) `S.union` r i
 
    w instr =
      case PX.writeArgs instr of
@@ -68,11 +68,11 @@ mkSets _ [] = []
 {- Build Interference Graph -}
 
 buildInterference :: PX.Program -> PX.Program
-buildInterference (PX.Program i bs') = PX.Program i bs
+buildInterference (PX.Program i bs') = (PX.Program i bs)
  where bs = map (\(l, b) -> (l, bIBlock b)) bs'
 
 bIBlock :: PX.Block -> PX.Block
-bIBlock (PX.Block i' is) = PX.Block i is
+bIBlock (PX.Block i' is) = (PX.Block i is)
  where
   i =
     i' { PX.bInfoConflicts =
@@ -112,18 +112,18 @@ buildInterfere' (la:las) (i:is) =
     :: PX.Arg
     -> S.Set PX.Arg -> State (M.Map PX.Arg (S.Set PX.Arg)) ()
   addEdges s la' = do
-    modify $ M.insertWith S.union s la'
+    modify $ M.insertWith (S.union) s la'
     mapM_ (addEdge s) la'
     return ()
 
   addEdge :: PX.Arg -> PX.Arg -> State (M.Map PX.Arg (S.Set PX.Arg)) ()
   addEdge a1 a2 = do
-    modify $ M.insertWith S.union a2 (S.singleton a1)
+    modify $ M.insertWith (S.union) a2 (S.singleton a1)
     return ()
 
   addRegisters la' = do
     let rs = S.map PX.Reg (S.fromList regsToUse)
-    mapM_ (`addEdges` rs) la'
+    mapM_ (\s -> addEdges s rs) la'
 
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
@@ -131,11 +131,11 @@ buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live afte
 {- Build Move Biased Graph -}
 
 buildMoveBias :: PX.Program -> PX.Program
-buildMoveBias (PX.Program i bs) = PX.Program i bs'
+buildMoveBias (PX.Program i bs) = (PX.Program i bs')
  where
    bs' = map (\(l, b) -> (l, bMvBBlock b)) bs
    bMvBBlock (PX.Block i' is) =
-     PX.Block i' {PX.bInfoMoveRelated = buildMvBGraph is} is
+     (PX.Block i' {PX.bInfoMoveRelated = buildMvBGraph is} is)
 
 buildMvBGraph :: [PX.Instr] -> Map PX.Arg (Set PX.Arg)
 buildMvBGraph is = foldr bld M.empty is
@@ -152,10 +152,13 @@ buildMvBGraph is = foldr bld M.empty is
 {- Allocate Registers -}
 
 allocateRegisters :: PX.Program -> X.Program
-allocateRegisters (PX.Program _ bs) = X.Program info bs'
+allocateRegisters p@(PX.Program _ bs) = Ch2.assignHomes' locMap p
  where
-  bs' = map (\(l, b) -> (l, alBlock b)) bs
-  info = X.PInfo 1600 -- TODO
+   (PX.Block info _) = snd . head $ bs
+   locMap =
+         colorGraph
+           (PX.bInfoConflicts info)
+           (PX.bInfoMoveRelated info)
 
 alBlock :: PX.Block -> X.Block
 alBlock (PX.Block i is) =
@@ -163,35 +166,32 @@ alBlock (PX.Block i is) =
         colorGraph
           (PX.bInfoConflicts i)
           (PX.bInfoMoveRelated i)
-  in X.Block X.BInfo (map (alInstr storeLocs) is)
+  in (X.Block X.BInfo (map (alInstr storeLocs) is))
 
-alInstr :: M.Map String StoreLoc -> PX.Instr -> X.Instr
-alInstr m (PX.Addq aL aR) = X.Addq (alArg m aL) (alArg m aR)
-alInstr m (PX.Movq aL aR) = X.Movq (alArg m aL) (alArg m aR)
-alInstr m (PX.Subq aL aR) = X.Subq (alArg m aL) (alArg m aR)
-alInstr m (PX.Negq a)     = X.Negq (alArg m a)
-alInstr _ PX.Retq       = X.Retq
+alInstr :: M.Map String PX.StoreLoc -> PX.Instr -> X.Instr
+alInstr m (PX.Addq aL aR) = (X.Addq (alArg m aL) (alArg m aR))
+alInstr m (PX.Movq aL aR) = (X.Movq (alArg m aL) (alArg m aR))
+alInstr m (PX.Subq aL aR) = (X.Subq (alArg m aL) (alArg m aR))
+alInstr m (PX.Negq a)     = (X.Negq (alArg m a))
+alInstr _ (PX.Retq)       = X.Retq
 alInstr _ (PX.Callq s)    = X.Callq s
 alInstr _ (PX.Jmp s)      = X.Jmp s
 alInstr _ i               = error $ "alInstr: " ++ show i
 
-alArg :: M.Map String StoreLoc -> PX.Arg -> X.Arg
+alArg :: M.Map String PX.StoreLoc -> PX.Arg -> X.Arg
 alArg m (PX.Var s) = case M.lookup s m of
-  Nothing -> X.Reg X.Rcx -- Wha should it map to?
-  Just (Reg r) -> X.Reg (PX.toX860Reg r)
-  Just (Stack n) -> X.Deref X.Rbp n
-alArg _ (PX.Num x) = X.Num x
-alArg _ (PX.Deref r x) = X.Deref (PX.toX860Reg r) x
-alArg _ (PX.Reg r) = X.Reg (PX.toX860Reg r)
-
-data StoreLoc = Reg PX.Register | Stack Int
-  deriving (Show)
+  Nothing -> (X.Reg (X.Rcx)) -- Wha should it map to?
+  Just (PX.RegLoc r) -> (X.Reg (PX.toX860Reg r))
+  Just (PX.Stack n) -> (X.Deref X.Rbp n)
+alArg _ (PX.Num x) = (X.Num x)
+alArg _ (PX.Deref r x) = (X.Deref (PX.toX860Reg r) x)
+alArg _ (PX.Reg r) = (X.Reg (PX.toX860Reg r))
 
 -- Returns list of Strings to StoreLocs and frameSize
 colorGraph
-  :: Map PX.Arg (Set PX.Arg)
-  -> Map PX.Arg (Set PX.Arg)
-  -> Map String StoreLoc
+  :: (Map PX.Arg (Set PX.Arg))
+  -> (Map PX.Arg (Set PX.Arg))
+  -> (Map String PX.StoreLoc)
 colorGraph iList mvBList  =
   let
     (g', nodeFromVertex, vertexFromNode) = toGraph iList
@@ -250,46 +250,46 @@ toGraph
   :: M.Map PX.Arg (S.Set PX.Arg)
   -> (Graph, Vertex -> ((), PX.Arg, [PX.Arg]), PX.Arg -> Maybe Vertex)
 toGraph conflicts = graphFromEdges .
-  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map S.toList $ conflicts
+  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
 
 regsToUse :: [PX.Register]
-regsToUse = [ PX.Rdx, PX.Rcx ]
+regsToUse = [ PX.Rbx ]
 
 regIntAssoc :: [(Int, PX.Register)]
 regIntAssoc = zip [0..] regsToUse
 
-storeLocFromColor :: Int -> StoreLoc
+storeLocFromColor :: Int -> PX.StoreLoc
 storeLocFromColor n = case lookup n regIntAssoc of
-  Just r -> Reg r
-  Nothing -> Stack $ 8 * negate (n - length regIntAssoc)
+  Just r -> PX.RegLoc r
+  Nothing -> PX.Stack $ negate $ 8 * (n - (length regIntAssoc))
 
 colorFromReg :: PX.Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
---test :: IO ()
---test =
---  let
---    uncover = uncoverLive exampleProgram
---    inter = buildInterference uncover
---    moveBias = buildMoveBias inter
---    alloc = allocateRegisters moveBias
---    patch = patchInstructions alloc
---  in putStrLn $ prettyPrint patch
---
---exampleProgram =
---  (PX.Program
---    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
---    [("start",PX.Block PX.emptyBInfo
---  [PX.Movq (PX.Num 1) (PX.Var "v")        --
---  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
---  ,PX.Movq (PX.Var "v") (PX.Var "x")      --
---  ,PX.Addq (PX.Num 7) (PX.Var "x")        --
---  ,PX.Movq (PX.Var "x") (PX.Var "y")      --
---  ,PX.Addq (PX.Num 4) (PX.Var "y")        --
---  ,PX.Movq (PX.Var "x") (PX.Var "z")      --
---  ,PX.Addq (PX.Var "w") (PX.Var "z")      --
---  ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
---  ,PX.Negq (PX.Var "t.1")                 --
---  ,PX.Movq (PX.Var "z") (PX.Reg PX.Rax)   --
---  ,PX.Addq (PX.Var "t.1") (PX.Reg PX.Rax) --
---  ,PX.Jmp "conclusion"])])                --
+test :: IO ()
+test =
+  let
+    uncover = uncoverLive exampleProgram
+    inter = buildInterference uncover
+    moveBias = buildMoveBias inter
+    alloc = allocateRegisters moveBias
+    patch = patchInstructions alloc
+  in putStrLn $ prettyPrint patch
+
+exampleProgram =
+  (PX.Program
+    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
+    [("start",PX.Block PX.emptyBInfo
+  [PX.Movq (PX.Num 1) (PX.Var "v")        --
+  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
+  ,PX.Movq (PX.Var "v") (PX.Var "x")      --
+  ,PX.Addq (PX.Num 7) (PX.Var "x")        --
+  ,PX.Movq (PX.Var "x") (PX.Var "y")      --
+  ,PX.Addq (PX.Num 4) (PX.Var "y")        --
+  ,PX.Movq (PX.Var "x") (PX.Var "z")      --
+  ,PX.Addq (PX.Var "w") (PX.Var "z")      --
+  ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
+  ,PX.Negq (PX.Var "t.1")                 --
+  ,PX.Movq (PX.Var "z") (PX.Reg PX.Rax)   --
+  ,PX.Addq (PX.Var "t.1") (PX.Reg PX.Rax) --
+  ,PX.Jmp "conclusion"])])                --
