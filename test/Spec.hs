@@ -1,69 +1,44 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
-import Test.HUnit
+import Control.Exception
 import System.Directory
+import System.Exit
+import System.IO.Temp
+import System.Process
 import System.Random
+import Test.Tasty
+import Test.Tasty.HUnit
+import Test.Tasty.Ingredients.ConsoleReporter
 
 import Common
 import qualified R0
 import qualified R1
+import qualified R2
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 
 main :: IO ()
-main = runTestTT (TestList $ [ch1Tests, ch2Tests, ch3Tests]) >> pure ()
+main = defaultMain
+  $ localOption (Quiet True)
+  $ testGroup "Essentials Of Compilation" $
+  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
 
-parseTest :: (Show a) => (String -> a) -> String -> Test
-parseTest p input = TestCase $
-  assertEqual ("Parse Test: " ++ input)
-    input
-    (show . p $ input)
-
-interpTest :: (Eq b, Show b)
-  => (String -> a) -> (a -> b) -> String -> b -> Test
-interpTest p i input expected = TestCase $
-  let actual = i . p $ input
-  in assertEqual ("Interp Test: " ++ input) expected actual
-
-equalInterpTest :: (Eq b, Show b)
-  => (String -> a) -> (a -> b) -> (a -> b) -> String -> Test
-equalInterpTest p iRef iTest input = TestLabel ("EqualInterp Test: " ++ input) $ TestCase $
-  let actual = iRef (p input)
-      expected = iTest (p input)
-  in assertEqual ("Equal Test: " ++ input) expected actual
-
-compileTest :: (Random b, Show b)
-  => (String -> a)     -- ^ Parser
-  -> ([b] -> a -> Int) -- ^ Interpreter
-  -> (a -> String)     -- ^ Compiler
-  -> String            -- ^ Program
-  -> Test
-compileTest p i c prog = TestLabel "" $ TestCase $ do
-  gen <- getStdGen
-  let input = randoms gen
-      expected =  i input (p prog) `mod` 256
-  compileToFile p c prog "./test/testenv/test"
-  actual <- runBinary "./test/testenv/test" input
-  removeFile "./test/testenv/test.s"
-  removeFile "./test/testenv/test"
-  assertEqual ("Compile Test: " ++ prog)
-    expected
-    actual
+ingredients = defaultIngredients
 
 
--- R0 --
+{----- Chapter 1 Tests -----}
 
-exercise1Test :: String -> String -> Test
-exercise1Test input expected = TestCase $
+exercise1Test :: String -> String -> TestTree
+exercise1Test input expected = testCase "Exercise 1" $
   assertEqual ("Exercise 1: " ++ input)
     expected
     (show . R0.pe . R0.doParse $ input)
 
-ch1Tests :: Test
-ch1Tests = TestLabel "R0" . TestList $
-  [ parseTest R0.doParse "(+ 8 2)"
-  , parseTest R0.doParse "(+ (+ (read) (- 4)) (read))"
-  , parseTest R0.doParse "(+ (+ (+ (read) (- 9)) (- 4)) (- 2))"
+ch1Tests :: TestTree
+ch1Tests = testGroup "Chapter 1" $
+  [ parseTest R0.parse "(+ 8 2)"
+  , parseTest R0.parse "(+ (+ (read) (- 4)) (read))"
+  , parseTest R0.parse "(+ (+ (+ (read) (- 9)) (- 4)) (- 2))"
   , exercise1Test "(+ 1 (+ (read) 1))" "(+ 2 (read))"
   , exercise1Test
       "(+ (read) 2)"
@@ -98,37 +73,17 @@ ch1Tests = TestLabel "R0" . TestList $
   ]
 
 
--- R1 --
+{----- Chapter 2 -----}
 
-testR1Uniquify :: String -> Test
-testR1Uniquify =
-  equalInterpTest R1.doParse (R1.interp [0,5..]) (R1.interp [0,5..] . Ch2.uniquify)
-
-testR1RCO :: String -> Test
-testR1RCO =
-  equalInterpTest R1.doParse (R1.interp [0,5..]) (R1.interp [0,5..] . Ch2.rco . Ch2.uniquify )
-
-ch2CompileTest :: String -> Test
+ch2CompileTest :: String -> TestTree
 ch2CompileTest =
-  compileTest R1.doParse R1.interp Ch2.compile
+  compileTest R1.parse R1.interp Ch2.compile
 
-ch2Tests = TestLabel "Ch1". TestList $
-  [ interpTest R1.doParse (R1.interp []) testExpr10 42
-  , interpTest R1.doParse (R1.interp []) testExpr11 42
-  , interpTest R1.doParse (R1.interp []) testExpr12 42
-  , interpTest R1.doParse (R1.interp [52, 10]) testExpr13 42
-  , testR1Uniquify testExpr1
-  , testR1Uniquify testExpr2
-  , testR1Uniquify testExpr3
-  , testR1Uniquify testExpr4
-  , testR1Uniquify testExpr5
-  , testR1RCO testExpr1
-  , testR1RCO testExpr2
-  , testR1RCO testExpr3
-  , testR1RCO testExpr4
-  , testR1RCO testExpr5
-  , testR1RCO testExpr6
-  , testR1RCO testExpr7
+ch2Tests = testGroup "Chapter 1" $
+  [ interpTest R1.parse R1.interp testExpr10 [] 42
+  , interpTest R1.parse R1.interp testExpr11 [] 42
+  , interpTest R1.parse R1.interp testExpr12 [] 42
+  , interpTest R1.parse R1.interp testExpr13 [52, 10] 42
   , ch2CompileTest testExpr1
   , ch2CompileTest testExpr2
   , ch2CompileTest testExpr3
@@ -156,11 +111,11 @@ ch2Tests = TestLabel "Ch1". TestList $
   , ch2CompileTest testExpr25
   ]
 
-ch3CompileTest :: String -> Test
+ch3CompileTest :: String -> TestTree
 ch3CompileTest =
-  compileTest R1.doParse R1.interp Ch3.compile
+  compileTest R1.parse R1.interp Ch3.compile
 
-ch3Tests = TestLabel "Ch2". TestList $
+ch3Tests = testGroup "Chapter 2" $
   [ ch3CompileTest testExpr1
   , ch3CompileTest testExpr2
   , ch3CompileTest testExpr3
@@ -186,6 +141,7 @@ ch3Tests = TestLabel "Ch2". TestList $
   , ch3CompileTest testExpr23
   , ch3CompileTest testExpr24
   ]
+
 testExpr1 = "(+ 8 2)"
 testExpr2 = "(+ (read) 2)"
 testExpr3 = "(+ (read) (read))"
@@ -211,3 +167,88 @@ testExpr22 = "(- (let ([x (+ 2 3)]) (- (+ x x))))"
 testExpr23 = "(- (read))"
 testExpr24 = "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
 testExpr25 = "(let ([x 5]) x)"
+
+ch4Tests :: TestTree
+ch4Tests = testGroup "Chapter 4" $
+  [ parseTest R2.parse testExpr22
+  , parseTest R2.parse testExpr26
+  , parseTest R2.parse testExpr27
+  , parseTest R2.parse testExpr28
+  , parseTest R2.parse testExpr29
+  , parseTest R2.parse testExpr30
+  , parseTest R2.parse testExpr31
+  ]
+
+testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
+testExpr27 = "(if (and #t #f) (or #t #f) #f)"
+testExpr28 = "(if (and #t #f) (cmp <= 2 3) #f)"
+testExpr29 = "(if (not #f) (cmp > 2 3) #f)"
+testExpr30 = "(if (cmp eq? 2 2) (cmp eq? 4 4) #f)"
+testExpr31 = "(if (cmp eq? 2 2) (- 9 3) #f)"
+
+{----- Generalized Tests -----}
+
+parseTest :: (Show a) => Parser a -> String -> TestTree
+parseTest p prog = testCase ("Parse -- " ++ prog) $
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> assertEqual "" prog (show prog')
+
+compileTest
+  :: Parser a
+  -> Interpreter a
+  -> Compiler a
+  -> String            -- ^ Program
+  -> TestTree
+compileTest p i c prog = testCase ("Compile -- " ++ prog) $
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> do
+      gen <- getStdGen
+      let input = randoms gen
+          expected =  i input prog' `mod` 256
+      actual <- compileAndRun c prog' input
+      assertEqual ""
+        expected
+        actual
+
+interpTest :: Parser a -> Interpreter a -> String -> [Int] -> Int -> TestTree
+interpTest p i prog ins expected = testCase ("Interp -- " ++ prog) $
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> assertEqual "" expected (i ins prog')
+
+typeCheckTest :: (Show b, Eq b)
+  => Parser a -> TypeChecker a b -> String -> b -> TestTree
+typeCheckTest p tc prog expected = testCase ("TypeCheck -- " ++ prog) $
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> case tc prog' of
+      Left e' -> assertFailure (show e')
+      Right ty -> assertEqual "" expected ty
+
+typeCheckFailTest :: (Show b)
+  => Parser a -> TypeChecker a b -> String -> TestTree
+typeCheckFailTest p tc prog = testCase ("TypeCheck Failure -- " ++ prog) $
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> case tc prog' of
+      Left _ -> assertBool "" True
+      Right ty -> assertFailure ("Expected failure, but got " ++ show ty)
+
+{----- Utilities -----}
+
+compileAndRun :: Compiler a -> a -> [Int] -> IO (Int)
+compileAndRun c prog ins = do
+  tAsm <- emptySystemTempFile "eocAsm.s"
+  let tBin = tAsm ++ ".out"
+  result <- finally
+     (do writeFile tAsm (c prog)
+         (exitCode, stdOut, _) <- readProcessWithExitCode "gcc" ["-g", "./test/testenv/runtime.o", tAsm, "-g", "-O0", "-o", tBin] ""
+         case exitCode of
+           (ExitFailure _) -> return $ Left stdOut
+           (ExitSuccess) -> Right <$> runBinary tBin ins)
+     (do return ())
+  case result of
+    Left e -> error $ e
+    Right x -> return x

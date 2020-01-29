@@ -1,5 +1,5 @@
 module Chapter3 where
-h
+
 import qualified PsuedoX860 as PX
 import qualified X860 as X
 import Data.Set (Set)

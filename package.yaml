@@ -67,4 +67,6 @@ tests:
     dependencies:
     - essentials-of-compilation
     - directory
-    - HUnit
+    - tasty
+    - tasty-hunit
+    - temporary

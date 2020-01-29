@@ -12,23 +12,42 @@ import Data.Graph
 import qualified Data.Map as M
 import GHC.IO.Handle
 
+import Text.Parsec.Error
+
+type Parser a = (String -> Either ParseError a)
+
+type Interpreter a = ([Int] -> a -> Int)
+
+type TypeChecker a t = (a -> Either TypeError t)
+
+type Compiler a = (a -> String)
+
+data ParseException = ParseException String
+
+instance Show ParseException where
+  show (ParseException e) = e
+
+instance Exception ParseException
+
 class PrettyPrint a where
   prettyPrint :: a -> String
 
 compileToFile
-  :: (String -> a) -- ^ Parser
-  -> (a -> String) -- ^ Compiler
+  :: Parser a
+  -> Compiler a
   -> String        -- ^ Program
   -> FilePath      -- ^ Output file
   -> IO ()
 compileToFile p c prog fp = do
-  writeFile ass . c . p $ prog
-  (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
-      ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
-  case exitCode of
-    (ExitFailure _) -> error stdOut
-    ExitSuccess ->
-      pure ()
+  case p prog of
+    Left e -> throw (ParseException (show e))
+    Right prog' -> do
+      writeFile ass . c $ prog'
+      (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+          ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
+      case exitCode of
+        (ExitFailure _) -> error stdOut
+        ExitSuccess -> pure ()
  where
   ass = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
 

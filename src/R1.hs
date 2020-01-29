@@ -2,13 +2,16 @@
 
 module R1 where
 
+import Common
+
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State
 
 import Text.Parsec.Token
 import Text.Parsec.Language
-import Text.Parsec (oneOf, parse, letter, alphaNum)
+import Text.Parsec (oneOf, letter, alphaNum)
+import qualified Text.Parsec as Parsec (parse)
 
 import qualified Data.Map as M
 
@@ -41,15 +44,8 @@ instance Show Info where
   show Info = "()"
 
 {- Parser -}
-testParse :: String -> IO ()
-testParse s = case parse pProgram "" s of
- Left er -> print er
- Right p -> print p
-
-doParse :: String -> Program
-doParse s = case parse pProgram "" s of
-  Left err -> error $ show err
-  Right p  -> p
+parse :: Parser Program
+parse = Parsec.parse pProgram ""
 
 pProgram = Pgrm Info <$> pExpr
 
@@ -120,29 +116,3 @@ nextInput = do
       put is
       return i
     _ -> error "Read was called, but no more inputs remain"
-
-{- Partial evaluator -}
-
-testPE :: String -> String
-testPE = show . pe . doParse
-
-pe :: Program -> Program
-pe (Pgrm i e) = Pgrm i $ peExpr e
-
-peExpr :: Expr -> Expr
-peExpr (Neg (Num n)) = Num (negate n)
-peExpr (Neg (Add eL eR)) = peExpr (Add (Neg eL) (Neg eR))
-peExpr (Neg (Neg x)) = peExpr x
-peExpr (Add (Num x) (Num y)) = Num (x+y)
-peExpr (Add (Num 0) e) = peExpr e
-peExpr (Add (Num x) (Add (Num y) e)) = peExpr (Add (Num (x+y)) e)
-peExpr (Add (Add a b) (Add c d)) = peExpr (Add a (Add b (Add c d)))
-peExpr (Add e (Num x)) = peExpr (Add (Num x) e)
-peExpr (Add e1 (Add (Num x) e2)) = peExpr (Add (Num x) (Add e1 e2))
-peExpr (Add e1@(Add _ _) e2) = peExpr (Add e2 e1)
-peExpr (Add eL eR) =
-  case (peExpr eL, peExpr eR) of
-    (eL2, Add (Num x) eR2) ->
-      peExpr (Add (Num x) (Add eL2 eR2))
-    (eL2, eR2) -> Add eL2 eR2
-peExpr e = e

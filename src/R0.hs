@@ -7,7 +7,10 @@ import Control.Monad
 import Text.Parsec.Token
 import Text.Parsec.Language
 import Text.Parsec.Char
-import Text.Parsec
+import Text.Parsec hiding (parse)
+import qualified Text.Parsec as Parsec (parse)
+
+import Common
 
 data Expr = Num Int | Read | Neg Expr | Add Expr Expr
 
@@ -24,13 +27,12 @@ instance Show Program where
   show (Pgrm e) = show e
 
 {- Parser -}
-testParse :: String -> IO ()
-testParse s = case parse pProgram "" s of
- Left er -> print er
- Right p -> print p
+
+parse :: Parser Program
+parse = Parsec.parse pProgram ""
 
 doParse :: String -> Program
-doParse s = case parse pProgram "" s of
+doParse s = case Parsec.parse pProgram "" s of
   Left err -> error $ show err
   Right p  -> p
 
