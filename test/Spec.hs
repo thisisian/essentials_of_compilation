@@ -21,7 +21,7 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
+  [ch4Tests]
 
 ingredients = defaultIngredients
 
@@ -77,13 +77,13 @@ ch1Tests = testGroup "Chapter 1" $
 
 ch2CompileTest :: String -> TestTree
 ch2CompileTest =
-  compileTest R1.parse R1.interp Ch2.compile
+  compileTest R1.parse dummyTypeChecker R1.interp Ch2.compile
 
 ch2Tests = testGroup "Chapter 1" $
-  [ interpTest R1.parse R1.interp testExpr10 [] 42
-  , interpTest R1.parse R1.interp testExpr11 [] 42
-  , interpTest R1.parse R1.interp testExpr12 [] 42
-  , interpTest R1.parse R1.interp testExpr13 [52, 10] 42
+  [ interpTest R1.parse dummyTypeChecker R1.interp testExpr10 [] 42
+  , interpTest R1.parse dummyTypeChecker R1.interp testExpr11 [] 42
+  , interpTest R1.parse dummyTypeChecker R1.interp testExpr12 [] 42
+  , interpTest R1.parse dummyTypeChecker R1.interp testExpr13 [52, 10] 42
   , ch2CompileTest testExpr1
   , ch2CompileTest testExpr2
   , ch2CompileTest testExpr3
@@ -113,7 +113,7 @@ ch2Tests = testGroup "Chapter 1" $
 
 ch3CompileTest :: String -> TestTree
 ch3CompileTest =
-  compileTest R1.parse R1.interp Ch3.compile
+  compileTest R1.parse dummyTypeChecker R1.interp Ch3.compile
 
 ch3Tests = testGroup "Chapter 2" $
   [ ch3CompileTest testExpr1
@@ -168,6 +168,14 @@ testExpr23 = "(- (read))"
 testExpr24 = "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
 testExpr25 = "(let ([x 5]) x)"
 
+{----- Chapter 4 Tests -----}
+
+ch4TypeCheck = typeCheckTest R2.parse R2.typeCheck
+
+ch4TypeCheckFail = typeCheckFailTest R2.parse R2.typeCheck
+
+ch4InterpTest = interpTest R2.parse R2.typeCheck R2.interp
+
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
   [ parseTest R2.parse testExpr22
@@ -175,16 +183,38 @@ ch4Tests = testGroup "Chapter 4" $
   , parseTest R2.parse testExpr27
   , parseTest R2.parse testExpr28
   , parseTest R2.parse testExpr29
-  , parseTest R2.parse testExpr30
-  , parseTest R2.parse testExpr31
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(cmp <= #t 3)"
+  , ch4TypeCheckFail "(let ([x 2]) y)"
+  , ch4TypeCheckFail "(- #t)"
+  , ch4TypeCheckFail "(+ #t 2)"
+  , ch4TypeCheckFail "(or 2 #f)"
+  , ch4TypeCheck testExpr26 R2.TBool
+  , ch4TypeCheck testExpr27 R2.TBool
+  , ch4TypeCheck testExpr29 R2.TBool
+  , ch4TypeCheck testExpr30 R2.TBool
+  , ch4TypeCheck testExpr31 R2.TBool
+  , ch4InterpTest testExpr26 [] 1
+  , ch4InterpTest testExpr27 [] 0
+  , ch4InterpTest testExpr28 [] 1
+  , ch4InterpTest testExpr29 [] 0
+  , ch4InterpTest testExpr30 [5] 1
+  , ch4InterpTest testExpr31 [2,3] 0
+  , ch4InterpTest testExpr32 [50] (-50)
+  , ch4InterpTest testExpr33 [] 10
   ]
 
 testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
 testExpr27 = "(if (and #t #f) (or #t #f) #f)"
-testExpr28 = "(if (and #t #f) (cmp <= 2 3) #f)"
+testExpr28 = "(if (and #t #f) #f (cmp <= 2 3))"
 testExpr29 = "(if (not #f) (cmp > 2 3) #f)"
-testExpr30 = "(if (cmp eq? 2 2) (cmp eq? 4 4) #f)"
-testExpr31 = "(if (cmp eq? 2 2) (- 9 3) #f)"
+testExpr30 = "(let ([x (read)]) (if (cmp <= x 3) (and #t #f) (or #t #f)))"
+testExpr31 = "(let ([x (read)]) (let ([y (read)]) (cmp >= x y)))"
+testExpr32 = "(- (let ([x (read)]) (if (and #t #t) (if (or #f #f) 90 (if (not #f) (if (cmp eq? x 100) 90 (if (cmp < x 100) x 90)) 90)) 90)))"
+testExpr33 = "(if (not (not (and #f #t))) 90 10)"
 
 {----- Generalized Tests -----}
 
@@ -196,27 +226,36 @@ parseTest p prog = testCase ("Parse -- " ++ prog) $
 
 compileTest
   :: Parser a
+  -> TypeChecker a b
   -> Interpreter a
   -> Compiler a
   -> String            -- ^ Program
   -> TestTree
-compileTest p i c prog = testCase ("Compile -- " ++ prog) $
+compileTest p tc i c prog = testCase ("Compile -- " ++ prog) $
   case p prog of
     Left e -> assertFailure (show e)
-    Right prog' -> do
-      gen <- getStdGen
-      let input = randoms gen
-          expected =  i input prog' `mod` 256
-      actual <- compileAndRun c prog' input
-      assertEqual ""
-        expected
-        actual
+    Right prog' -> case tc prog' of
+      Left e' -> assertFailure (show e')
+      Right _ -> do
+        gen <- getStdGen
+        let input = randoms gen
+            expected =  i input prog' `mod` 256
+        actual <- compileAndRun c prog' input
+        assertEqual ""
+          expected
+          actual
 
-interpTest :: Parser a -> Interpreter a -> String -> [Int] -> Int -> TestTree
-interpTest p i prog ins expected = testCase ("Interp -- " ++ prog) $
+interpTest
+  :: Parser a
+  -> TypeChecker a b
+  -> Interpreter a
+  -> String -> [Int] -> Int -> TestTree
+interpTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $
   case p prog of
     Left e -> assertFailure (show e)
-    Right prog' -> assertEqual "" expected (i ins prog')
+    Right prog' -> case tc prog' of
+      Left e' -> assertFailure (show e')
+      Right _ -> assertEqual "" expected (i ins prog')
 
 typeCheckTest :: (Show b, Eq b)
   => Parser a -> TypeChecker a b -> String -> b -> TestTree
@@ -237,6 +276,9 @@ typeCheckFailTest p tc prog = testCase ("TypeCheck Failure -- " ++ prog) $
       Right ty -> assertFailure ("Expected failure, but got " ++ show ty)
 
 {----- Utilities -----}
+
+dummyTypeChecker :: TypeChecker a ()
+dummyTypeChecker a = Right ()
 
 compileAndRun :: Compiler a -> a -> [Int] -> IO (Int)
 compileAndRun c prog ins = do

@@ -222,8 +222,8 @@ instance Show Type where
   show TBool = "Bool"
   show TNum  = "Num"
 
-typeCheck :: Expr -> Either TypeError Type
-typeCheck e = typeChkExpr M.empty e
+typeCheck :: Program -> Either TypeError Type
+typeCheck (Pgrm _ e) = typeChkExpr M.empty e
 
 typeChkExpr :: (M.Map String Type) -> Expr -> Either TypeError Type
 typeChkExpr _ (Num _) = Right TNum
@@ -261,7 +261,6 @@ typeChkUniOp argTy retTy env e = do
     then Right retTy
     else Left . TypeError $ "Unary op expected " ++ show argTy ++
       " but got " ++ show t
-
 
 typeChkBinOp argTy retTy env eL eR = do
   tL <- typeChkExpr env eL
