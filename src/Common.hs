@@ -1,6 +1,10 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Common where
 
 import Control.Exception
+import Control.Monad.State
+import Control.Monad.Reader
 import Prelude
 import System.Process
 import qualified Filesystem.Path.CurrentOS as FP
@@ -29,6 +33,8 @@ instance Show ParseException where
 
 instance Exception ParseException
 
+
+-- | Class for pretty printing x86
 class PrettyPrint a where
   prettyPrint :: a -> String
 
@@ -85,3 +91,20 @@ mapSetToGraph :: (Ord a)
   -> (Graph, Vertex -> ((), a, [a]), a -> Maybe Vertex)
 mapSetToGraph m = graphFromEdges .
   map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m
+
+
+
+type FreshM a = ReaderT String (State Int) a
+
+newtype FreshEnv a = FreshEnv { unFreshEnv :: FreshM a }
+  deriving (Functor, Applicative, Monad, MonadReader String, MonadState Int)
+
+fresh :: FreshEnv String
+fresh = do
+  x <- get
+  prefix <- ask
+  put (x+1)
+  return (prefix ++ show x)
+
+runFreshEnv :: String -> FreshEnv a -> a
+runFreshEnv prefix c = flip evalState 0 $ runReaderT (unFreshEnv c) prefix

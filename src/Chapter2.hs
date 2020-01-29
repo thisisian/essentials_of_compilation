@@ -29,9 +29,9 @@ compile =
 type SymbolTable = M.Map String String
 
 uniquify :: R1.Program -> R1.Program
-uniquify (R1.Pgrm i e) = R1.Pgrm i $ evalState (uniquifyExpr M.empty e) 0
+uniquify (R1.Pgrm i e) = R1.Pgrm i $ runFreshEnv "_x" (uniquifyExpr M.empty e)
 
-uniquifyExpr :: SymbolTable -> R1.Expr -> State Int R1.Expr
+uniquifyExpr :: SymbolTable -> R1.Expr -> FreshEnv R1.Expr
 uniquifyExpr st (R1.Neg e) = R1.Neg <$> uniquifyExpr st e
 uniquifyExpr st (R1.Add eL eR) =
   return R1.Add `ap` uniquifyExpr st eL `ap` uniquifyExpr st eR
@@ -47,24 +47,18 @@ uniquifyExpr st (R1.Let name be e) = do
   return (R1.Let name' be' e')
 uniquifyExpr _ e = return e
 
-fresh :: State Int String
-fresh = do
-  i <- get
-  put (i+1)
-  return ("_x"++show i)
+--fresh :: State Int String
+--fresh = do
+--  i <- get
+--  put (i+1)
+--  return ("_x"++show i)
 
 {- Remove Complex Operators and Operands -}
 
 rco :: R1.Program -> R1.Program
-rco (R1.Pgrm i e) = R1.Pgrm i $ evalState (rcoExpr e) 0
+rco (R1.Pgrm i e) = R1.Pgrm i $ runFreshEnv "_rco" (rcoExpr e)
 
-freshTemp :: State Int String
-freshTemp = do
-  i <- get
-  put (i+1)
-  return ("_temp"++show i)
-
-rcoExpr :: R1.Expr -> State Int R1.Expr
+rcoExpr :: R1.Expr -> FreshEnv R1.Expr
 rcoExpr (R1.Num x) = return (R1.Num x)
 rcoExpr R1.Read = return R1.Read
 rcoExpr (R1.Var name) = return (R1.Var name)
@@ -80,21 +74,21 @@ rcoExpr (R1.Let name be e) = do
   e' <- rcoExpr e
   return (makeBindings bindingsBE (R1.Let name be' e'))
 
-rcoArg :: R1.Expr -> State Int ([(String, R1.Expr)], R1.Expr)
+rcoArg :: R1.Expr -> FreshEnv ([(String, R1.Expr)], R1.Expr)
 rcoArg (R1.Num x) = return ([], R1.Num x)
 rcoArg (R1.Var name) = return ([], R1.Var name)
 rcoArg R1.Read = do
-  n <- freshTemp
+  n <- fresh
   return ([(n , R1.Read)] , R1.Var n)
 rcoArg (R1.Neg e) = do
   (bindings, e') <- rcoArg e
-  n <- freshTemp
+  n <- fresh
   return (bindings ++ [(n, R1.Neg e')]
          , R1.Var n)
 rcoArg (R1.Add eL eR) = do
   (bindingsL, eL') <- rcoArg eL
   (bindingsR, eR') <- rcoArg eR
-  n <- freshTemp
+  n <- fresh
   return (bindingsL ++ bindingsR ++ [(n, R1.Add eL' eR')]
          , R1.Var n)
 rcoArg (R1.Let n be e) = do
