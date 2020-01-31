@@ -31,6 +31,7 @@ data Expr
   | If Expr Expr Expr
 
 data Compare = Eq | Lt | Leq | Gt | Geq
+  deriving Eq
 
 instance Show Expr where
   show (Num x) = show x
@@ -59,10 +60,10 @@ instance Show Compare where
   show Gt = ">"
   show Geq = ">="
 
-data Program = Pgrm Info Expr
+data Program = Program Info Expr
 
 instance Show Program where
-  show (Pgrm _ e) = show e
+  show (Program _ e) = show e
 
 data Info = Info
 
@@ -73,7 +74,7 @@ instance Show Info where
 parse :: Parser Program
 parse = Parsec.parse pProgram ""
 
-pProgram = Pgrm Info <$> pExpr
+pProgram = Program Info <$> pExpr
 
 pExpr = pNum <|> pVar <|> pTrue <|> pFalse <|> pParens pExpr'
  where
@@ -140,7 +141,7 @@ def = emptyDef { commentLine = ";;"
 type Env = M.Map String Int
 
 interp :: [Int] -> Program -> Int
-interp inputs (Pgrm _ e) = evalState (interpExpr M.empty e) inputs
+interp inputs (Program _ e) = evalState (interpExpr M.empty e) inputs
 
 interpExpr :: Env -> Expr -> State [Int] Int
 interpExpr _ (Num x) = return x
@@ -223,7 +224,7 @@ instance Show Type where
   show TNum  = "Num"
 
 typeCheck :: Program -> Either TypeError Type
-typeCheck (Pgrm _ e) = typeChkExpr M.empty e
+typeCheck (Program _ e) = typeChkExpr M.empty e
 
 typeChkExpr :: (M.Map String Type) -> Expr -> Either TypeError Type
 typeChkExpr _ (Num _) = Right TNum

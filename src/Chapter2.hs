@@ -3,7 +3,6 @@ module Chapter2 where
 import qualified Data.Map as M
 
 import Control.Monad
-import Control.Monad.State
 
 import qualified R1
 import qualified C0
@@ -46,12 +45,6 @@ uniquifyExpr st (R1.Let name be e) = do
   e' <- uniquifyExpr st' e
   return (R1.Let name' be' e')
 uniquifyExpr _ e = return e
-
---fresh :: State Int String
---fresh = do
---  i <- get
---  put (i+1)
---  return ("_x"++show i)
 
 {- Remove Complex Operators and Operands -}
 
@@ -145,18 +138,18 @@ selectInstructions (C0.Pgrm _ _) = error "Expected only one label"
 
 siTail :: C0.Tail -> [PX.Instr]
 siTail (C0.Return (C0.Plain a))    =
-  [ PX.Movq (siArg a) (PX.Reg PX.Rax)
+  [ PX.Movq (siArg a) (PX.Reg Rax)
   , PX.Jmp "conclusion" ]
 siTail (C0.Return C0.Read)         =
   [ PX.Callq "read_int"
   , PX.Jmp "conclusion" ]
 siTail (C0.Return (C0.Neg a))      =
-  [ PX.Movq (siArg a) (PX.Reg PX.Rax)
-  , PX.Negq (PX.Reg PX.Rax)
+  [ PX.Movq (siArg a) (PX.Reg Rax)
+  , PX.Negq (PX.Reg Rax)
   , PX.Jmp "conclusion" ]
 siTail (C0.Return (C0.Plus aL aR)) =
-  [ PX.Movq (siArg aL) (PX.Reg PX.Rax)
-  , PX.Addq (siArg aR) (PX.Reg PX.Rax)
+  [ PX.Movq (siArg aL) (PX.Reg Rax)
+  , PX.Addq (siArg aR) (PX.Reg Rax)
   , PX.Jmp "conclusion" ]
 siTail (C0.Seq assign t) = siAssign assign ++ siTail t
 
@@ -165,7 +158,7 @@ siAssign (C0.Assign s (C0.Plain a))    =
   [ PX.Movq (siArg a) (PX.Var s) ]
 siAssign (C0.Assign s C0.Read)       =
   [ PX.Callq "read_int"
-  , PX.Movq (PX.Reg PX.Rax) (PX.Var s) ]
+  , PX.Movq (PX.Reg Rax) (PX.Var s) ]
 siAssign (C0.Assign s (C0.Neg a))
   | a == C0.Var s =
     [ PX.Negq (PX.Var s) ]
@@ -219,9 +212,9 @@ ahArg :: M.Map String PX.StoreLoc -> PX.Arg -> X.Arg
 ahArg _ (PX.Num x) = X.Num x
 ahArg m (PX.Var s) = case M.lookup s m of
   Nothing -> error $ "Assign homes: Variable " ++ s ++ " not found in map."
-  Just (PX.RegLoc r) -> X.Reg (PX.toX860Reg r)
-  Just (PX.Stack n)  -> X.Deref X.Rbp n
-ahArg _ (PX.Reg PX.Rax) = X.Reg X.Rax
+  Just (PX.RegLoc r) -> X.Reg r
+  Just (PX.Stack n)  -> X.Deref Rbp n
+ahArg _ (PX.Reg Rax) = X.Reg Rax
 ahArg _ _ = undefined
 
 createLocMap :: PX.Program -> M.Map String PX.StoreLoc
@@ -256,26 +249,26 @@ intro :: Int -> (String, X.Block)
 intro fSize
   | fSize == 0 = ( "main",
   X.Block X.BInfo
-    [ X.Pushq (X.Reg X.Rbp)
-    , X.Movq (X.Reg X.Rsp) (X.Reg X.Rbp)
+    [ X.Pushq (X.Reg Rbp)
+    , X.Movq (X.Reg Rsp) (X.Reg Rbp)
     , X.Jmp "start" ] )
   | otherwise  = ( "main",
   X.Block X.BInfo
-    [ X.Pushq (X.Reg X.Rbp)
-    , X.Movq (X.Reg X.Rsp) (X.Reg X.Rbp)
-    , X.Subq (X.Num fSize) (X.Reg X.Rsp)
+    [ X.Pushq (X.Reg Rbp)
+    , X.Movq (X.Reg Rsp) (X.Reg Rbp)
+    , X.Subq (X.Num fSize) (X.Reg Rsp)
     , X.Jmp "start" ] )
 
 conclusion :: Int -> (String, X.Block)
 conclusion fSize
   | fSize == 0 =
     ( "conclusion", X.Block X.BInfo
-      [ X.Popq (X.Reg X.Rbp)
+      [ X.Popq (X.Reg Rbp)
       , X.Retq ] )
   | otherwise  =
     ( "conclusion", X.Block X.BInfo
-      [ X.Addq (X.Num fSize) (X.Reg X.Rsp)
-      , X.Popq (X.Reg X.Rbp)
+      [ X.Addq (X.Num fSize) (X.Reg Rsp)
+      , X.Popq (X.Reg Rbp)
       , X.Retq ] )
 
 pBlock :: X.Block -> X.Block
@@ -283,13 +276,13 @@ pBlock (X.Block info instrs) = X.Block info (concatMap pInstrs instrs)
 
 pInstrs :: X.Instr -> [X.Instr]
 pInstrs (X.Movq (X.Deref regL offL) (X.Deref regR offR)) =
-  [ X.Movq (X.Deref regL offL) (X.Reg X.Rax)
-  , X.Movq (X.Reg X.Rax) (X.Deref regR offR) ]
+  [ X.Movq (X.Deref regL offL) (X.Reg Rax)
+  , X.Movq (X.Reg Rax) (X.Deref regR offR) ]
 pInstrs (X.Addq (X.Deref regL offL) (X.Deref regR offR)) =
-  [ X.Movq (X.Deref regL offL) (X.Reg X.Rax)
-  , X.Addq (X.Reg X.Rax) (X.Deref regR offR) ]
+  [ X.Movq (X.Deref regL offL) (X.Reg Rax)
+  , X.Addq (X.Reg Rax) (X.Deref regR offR) ]
 pInstrs (X.Subq (X.Deref regL offL) (X.Deref regR offR)) =
-  [ X.Movq (X.Deref regL offL) (X.Reg X.Rax)
-  , X.Subq (X.Reg X.Rax) (X.Deref regR offR) ]
+  [ X.Movq (X.Deref regL offL) (X.Reg Rax)
+  , X.Subq (X.Reg Rax) (X.Deref regR offR) ]
 pInstrs i@(X.Movq a1 a2) = [i | not $ a1 == a2]
 pInstrs i = [i]

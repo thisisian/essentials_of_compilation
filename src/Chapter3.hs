@@ -180,12 +180,12 @@ alInstr _ i               = error $ "alInstr: " ++ show i
 
 alArg :: M.Map String PX.StoreLoc -> PX.Arg -> X.Arg
 alArg m (PX.Var s) = case M.lookup s m of
-  Nothing -> (X.Reg (X.Rcx)) -- Wha should it map to?
-  Just (PX.RegLoc r) -> (X.Reg (PX.toX860Reg r))
-  Just (PX.Stack n) -> (X.Deref X.Rbp n)
+  Nothing -> (X.Reg (Rcx)) -- Wha should it map to?
+  Just (PX.RegLoc r) -> (X.Reg r)
+  Just (PX.Stack n) -> (X.Deref Rbp n)
 alArg _ (PX.Num x) = (X.Num x)
-alArg _ (PX.Deref r x) = (X.Deref (PX.toX860Reg r) x)
-alArg _ (PX.Reg r) = (X.Reg (PX.toX860Reg r))
+alArg _ (PX.Deref r x) = (X.Deref r x)
+alArg _ (PX.Reg r) = (X.Reg r)
 
 -- Returns list of Strings to StoreLocs and frameSize
 colorGraph
@@ -252,10 +252,10 @@ toGraph
 toGraph conflicts = graphFromEdges .
   map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
 
-regsToUse :: [PX.Register]
-regsToUse = [ PX.Rbx ]
+regsToUse :: [Register]
+regsToUse = [ Rbx ]
 
-regIntAssoc :: [(Int, PX.Register)]
+regIntAssoc :: [(Int, Register)]
 regIntAssoc = zip [0..] regsToUse
 
 storeLocFromColor :: Int -> PX.StoreLoc
@@ -263,7 +263,7 @@ storeLocFromColor n = case lookup n regIntAssoc of
   Just r -> PX.RegLoc r
   Nothing -> PX.Stack $ negate $ 8 * (n - (length regIntAssoc))
 
-colorFromReg :: PX.Register -> Maybe Int
+colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
 test :: IO ()
@@ -290,6 +290,6 @@ exampleProgram =
   ,PX.Addq (PX.Var "w") (PX.Var "z")      --
   ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
   ,PX.Negq (PX.Var "t.1")                 --
-  ,PX.Movq (PX.Var "z") (PX.Reg PX.Rax)   --
-  ,PX.Addq (PX.Var "t.1") (PX.Reg PX.Rax) --
+  ,PX.Movq (PX.Var "z") (PX.Reg Rax)   --
+  ,PX.Addq (PX.Var "t.1") (PX.Reg Rax) --
   ,PX.Jmp "conclusion"])])                --

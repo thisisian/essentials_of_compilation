@@ -16,6 +16,7 @@ import qualified R1
 import qualified R2
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
+import qualified Chapter4 as Ch4
 
 main :: IO ()
 main = defaultMain
@@ -23,9 +24,6 @@ main = defaultMain
   $ testGroup "Essentials Of Compilation" $
   --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
   [ch4Tests]
-
-ingredients = defaultIngredients
-
 
 {----- Chapter 1 Tests -----}
 
@@ -177,6 +175,9 @@ ch4TypeCheckFail = typeCheckFailTest R2.parse R2.typeCheck
 
 ch4InterpTest = interpTest R2.parse R2.typeCheck R2.interp
 
+ch4StepTest =
+  testCompileStep R2.parse R2.typeCheck id (Ch4.rco . Ch4.uniquify . Ch4.shrink) R2.interp "RCO"
+
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
   [ parseTest R2.parse testExpr22
@@ -206,6 +207,12 @@ ch4Tests = testGroup "Chapter 4" $
   , ch4InterpTest testExpr31 [2,3] 0
   , ch4InterpTest testExpr32 [50] (-50)
   , ch4InterpTest testExpr33 [] 10
+  , ch4StepTest testExpr26
+  , ch4StepTest testExpr27
+  , ch4StepTest testExpr28
+  , ch4StepTest testExpr29
+  , ch4StepTest testExpr30
+  , ch4StepTest testExpr31
   ]
 
 testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
@@ -232,66 +239,97 @@ compileTest
   -> Compiler a
   -> String            -- ^ Program
   -> TestTree
-compileTest p tc i c prog = testCase ("Compile -- " ++ prog) $
-  case p prog of
-    Left e -> assertFailure (show e)
-    Right prog' -> case tc prog' of
-      Left e' -> assertFailure (show e')
-      Right _ -> do
-        gen <- getStdGen
-        let input = randoms gen
-            expected =  i input prog' `mod` 256
-        actual <- compileAndRun c prog' input
-        assertEqual ""
-          expected
-          actual
+compileTest p tc i c prog = testCase ("Compile -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  typeCheckAssert tc prog'
+  input <- randomInput
+  let expected =  i input prog' `mod` 256
+  actual <- compileAndRun c prog' input
+  assertEqual ""
+    expected
+    actual
 
 interpTest
   :: Parser a
   -> TypeChecker a b
   -> Interpreter a
   -> String -> [Int] -> Int -> TestTree
-interpTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $
-  case p prog of
-    Left e -> assertFailure (show e)
-    Right prog' -> case tc prog' of
-      Left e' -> assertFailure (show e')
-      Right _ -> assertEqual "" expected (i ins prog')
+interpTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  typeCheckAssert tc prog'
+  assertEqual "" expected (i ins prog')
+
+testCompileStep
+  :: Parser a
+  -> TypeChecker a b
+  -> (a -> c)
+  -> (a -> c)
+  -> Interpreter c
+  -> String  -- Description
+  -> String
+  -> TestTree
+testCompileStep p tc refStps testStps i desc prog = testCase (desc ++ " -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  typeCheckAssert tc prog'
+  let ref = refStps prog'
+      test = testStps prog'
+  input <- randomInput
+  assertEqual ""
+    (i input ref)
+    (i input test)
+
 
 typeCheckTest :: (Show b, Eq b)
   => Parser a -> TypeChecker a b -> String -> b -> TestTree
-typeCheckTest p tc prog expected = testCase ("TypeCheck -- " ++ prog) $
-  case p prog of
-    Left e -> assertFailure (show e)
-    Right prog' -> case tc prog' of
-      Left e' -> assertFailure (show e')
-      Right ty -> assertEqual "" expected ty
+typeCheckTest p tc prog expected = testCase ("TypeCheck -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  case tc prog' of
+    Left e' -> assertFailure (show e')
+    Right ty -> assertEqual "" expected ty
 
 typeCheckFailTest :: (Show b)
   => Parser a -> TypeChecker a b -> String -> TestTree
-typeCheckFailTest p tc prog = testCase ("TypeCheck Failure -- " ++ prog) $
-  case p prog of
-    Left e -> assertFailure (show e)
-    Right prog' -> case tc prog' of
-      Left _ -> assertBool "" True
-      Right ty -> assertFailure ("Expected failure, but got " ++ show ty)
+typeCheckFailTest p tc prog = testCase ("TypeCheck Failure -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  case tc prog' of
+    Left _ -> assertBool "" True
+    Right ty -> assertFailure ("Expected failure, but got " ++ show ty)
 
 {----- Utilities -----}
 
+randomInput :: IO [Int]
+randomInput = do
+  gen <- getStdGen
+  return $ randoms gen
+
 dummyTypeChecker :: TypeChecker a ()
-dummyTypeChecker a = Right ()
+dummyTypeChecker _ = Right ()
+
+parseAssert :: Parser a -> String -> IO a
+parseAssert p prog =
+  case p prog of
+    Left e -> assertFailure (show e)
+    Right prog' -> return prog'
+
+typeCheckAssert :: TypeChecker a b -> a -> IO ()
+typeCheckAssert tc prog =
+  case tc prog of
+    Left e -> assertFailure (show e)
+    Right _ -> return ()
 
 compileAndRun :: Compiler a -> a -> [Int] -> IO (Int)
 compileAndRun c prog ins = do
-  tAsm <- emptySystemTempFile "eocAsm.s"
-  let tBin = tAsm ++ ".out"
+  asm <- emptySystemTempFile "eocAsm.s"
+  let bin = asm ++ ".out"
   result <- finally
-     (do writeFile tAsm (c prog)
-         (exitCode, stdOut, _) <- readProcessWithExitCode "gcc" ["-g", "./test/testenv/runtime.o", tAsm, "-g", "-O0", "-o", tBin] ""
+     (do writeFile asm (c prog)
+         (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+           ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
          case exitCode of
            (ExitFailure _) -> return $ Left stdOut
-           (ExitSuccess) -> Right <$> runBinary tBin ins)
-     (do return ())
+           (ExitSuccess) -> Right <$> runBinary bin ins)
+     (do removeFile asm
+         removeFile bin)
   case result of
-    Left e -> error $ e
+    Left stdOut -> error $ stdOut
     Right x -> return x

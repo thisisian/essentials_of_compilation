@@ -108,3 +108,28 @@ fresh = do
 
 runFreshEnv :: String -> FreshEnv a -> a
 runFreshEnv prefix c = flip evalState 0 $ runReaderT (unFreshEnv c) prefix
+
+
+{----- Registers ------}
+
+data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
+              | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+  deriving (Show, Ord, Eq)
+
+instance PrettyPrint Register where
+  prettyPrint Rsp = "%rsp"
+  prettyPrint Rbp = "%rbp"
+  prettyPrint Rax = "%rax"
+  prettyPrint Rbx = "%rbx"
+  prettyPrint Rcx = "%rcx"
+  prettyPrint Rdx = "%rdx"
+  prettyPrint Rsi = "%rsi"
+  prettyPrint Rdi = "%rdi"
+  prettyPrint R8  = "%r8"
+  prettyPrint R9  = "%r9"
+  prettyPrint R10 = "%r10"
+  prettyPrint R11 = "%r11"
+  prettyPrint R12 = "%r12"
+  prettyPrint R13 = "%r13"
+  prettyPrint R14 = "%r14"
+  prettyPrint R15 = "%r15"
