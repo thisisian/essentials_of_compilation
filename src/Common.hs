@@ -14,6 +14,7 @@ import qualified Data.Set as S
 import Data.Map (Map)
 import Data.Graph
 import qualified Data.Map as M
+import Data.Tuple
 import GHC.IO.Handle
 
 import Text.Parsec.Error
@@ -86,13 +87,37 @@ exitCodeToInt :: ExitCode -> Int
 exitCodeToInt ExitSuccess   = 0
 exitCodeToInt (ExitFailure n) = n
 
+--mapSetToGraph :: (Ord a)
+--  => Map a (Set a)
+--  -> (Graph, Vertex -> ((), a, [a]), a -> Maybe Vertex)
+--mapSetToGraph m = graphFromEdges .
+--  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m
+
 mapSetToGraph :: (Ord a)
   => Map a (Set a)
-  -> (Graph, Vertex -> ((), a, [a]), a -> Maybe Vertex)
-mapSetToGraph m = graphFromEdges .
-  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m
+  -> (Graph, Map Vertex a, Map a Vertex)
+mapSetToGraph m = (graph, vertexMap, keyMap)
+
+ where
+  keyMap =
+    M.fromList
+    . map swap
+    . M.toList
+    $ vertexMap
+
+  vertexMap =
+    M.fromList
+    .map (\v -> (\(_, k, _) -> (v, k)) (nodeFromVertex v))
+    . vertices
+    $ graph
 
 
+  (graph, nodeFromVertex, vertexFromKey) =
+    graphFromEdges
+    . map (\(k, ks) -> ((), k, ks))
+    . M.toList
+    . M.map (S.toList)
+    $ m
 
 type FreshM a = ReaderT String (State Int) a
 
@@ -114,7 +139,10 @@ runFreshEnv prefix c = flip evalState 0 $ runReaderT (unFreshEnv c) prefix
 
 data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
               | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+              | Al
   deriving (Show, Ord, Eq)
+
+callerSaved = [ Rax, Rdx, Rcx, Rsi, Rdi, R8, R9, R10, R11 ]
 
 instance PrettyPrint Register where
   prettyPrint Rsp = "%rsp"
@@ -133,3 +161,4 @@ instance PrettyPrint Register where
   prettyPrint R13 = "%r13"
   prettyPrint R14 = "%r14"
   prettyPrint R15 = "%r15"
+  prettyPrint Al  = "%al"

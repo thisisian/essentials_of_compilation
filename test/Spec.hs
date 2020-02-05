@@ -22,8 +22,8 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
-  [ch4Tests]
+  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
+  --[ch4Tests]
 
 {----- Chapter 1 Tests -----}
 

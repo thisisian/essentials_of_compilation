@@ -122,7 +122,7 @@ buildInterfere' (la:las) (i:is) =
     return ()
 
   addRegisters la' = do
-    let rs = S.map PX.Reg (S.fromList regsToUse)
+    let rs = S.map PX.Reg (S.fromList callerSaved)
     mapM_ (\s -> addEdges s rs) la'
 
 buildInterfere' [] [] = return ()
@@ -147,7 +147,6 @@ buildMvBGraph is = foldr bld M.empty is
           (M.fromList [(v1, S.singleton v2), (v2, S.singleton v1)])
           acc
       _ -> acc
-
 
 {- Allocate Registers -}
 
@@ -266,8 +265,8 @@ storeLocFromColor n = case lookup n regIntAssoc of
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
-test :: IO ()
-test =
+ch3Test :: IO ()
+ch3Test =
   let
     uncover = uncoverLive exampleProgram
     inter = buildInterference uncover

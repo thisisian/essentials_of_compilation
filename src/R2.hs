@@ -30,7 +30,7 @@ data Expr
   | Cmp Compare Expr Expr
   | If Expr Expr Expr
 
-data Compare = Eq | Lt | Leq | Gt | Geq
+data Compare = Eq | Lt | Le | Gt | Ge
   deriving Eq
 
 instance Show Expr where
@@ -56,9 +56,9 @@ instance Show Expr where
 instance Show Compare where
   show Eq = "eq?"
   show Lt = "<"
-  show Leq = "<="
+  show Le = "<="
   show Gt = ">"
-  show Geq = ">="
+  show Ge = ">="
 
 data Program = Program Info Expr
 
@@ -91,9 +91,9 @@ pExpr = pNum <|> pVar <|> pTrue <|> pFalse <|> pParens pExpr'
 
 pCmp = pReservedOp "eq?" *> return Eq
      <|> pReservedOp "<" *> return Lt
-     <|> pReservedOp "<=" *> return Leq
+     <|> pReservedOp "<=" *> return Le
      <|> pReservedOp ">" *> return Gt
-     <|> pReservedOp ">=" *> return Geq
+     <|> pReservedOp ">=" *> return Ge
 
 
 pVar = Var <$> pIdent
@@ -173,9 +173,9 @@ interpExpr env (Not e) = do
   if v == 0 then return 1 else return 0
 interpExpr env (Cmp Eq eL eR) = interpBinBoolOp env (==) eL eR
 interpExpr env (Cmp Lt eL eR) = interpBinBoolOp env (<) eL eR
-interpExpr env (Cmp Leq eL eR) = interpBinBoolOp env (<=) eL eR
+interpExpr env (Cmp Le eL eR) = interpBinBoolOp env (<=) eL eR
 interpExpr env (Cmp Gt eL eR) = interpBinBoolOp env (>) eL eR
-interpExpr env (Cmp Geq eL eR) = interpBinBoolOp env (>=) eL eR
+interpExpr env (Cmp Ge eL eR) = interpBinBoolOp env (>=) eL eR
 interpExpr env (If e eT eF) = do
   v <- interpExpr env e
   if v == 0

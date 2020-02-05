@@ -39,8 +39,8 @@ callerSaved :: Set Register
 callerSaved = S.fromList [Rax, Rdx, Rcx, Rdi, R8, R9, R10, R11]
 
 writeArgs :: Instr -> Maybe (Set Arg)
-writeArgs (Addq aL aR) = Just (S.fromList [aL, aR])
-writeArgs (Subq aL aR) = Just (S.fromList [aL, aR])
+writeArgs (Addq _ a)   = Just (S.singleton a)
+writeArgs (Subq _ a)   = Just (S.singleton a)
 writeArgs (Movq _ a)   = Just (S.singleton a)
 writeArgs (Negq a)     = Just (S.singleton a)
 writeArgs (Pushq _)    = Nothing
