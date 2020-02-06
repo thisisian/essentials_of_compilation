@@ -26,6 +26,7 @@ dependencies:
 - mtl
 - parsec
 - process 
+- safe
 - system-filepath
 - random
 

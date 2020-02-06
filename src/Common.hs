@@ -16,6 +16,7 @@ import Data.Graph
 import qualified Data.Map as M
 import Data.Tuple
 import GHC.IO.Handle
+import Debug.Trace
 
 import Text.Parsec.Error
 
@@ -50,10 +51,10 @@ compileToFile p c prog fp = do
     Left e -> throw (ParseException (show e))
     Right prog' -> do
       writeFile ass . c $ prog'
-      (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+      (exitCode, stdOut, stdErr) <- readProcessWithExitCode "gcc"
           ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
       case exitCode of
-        (ExitFailure _) -> error stdOut
+        (ExitFailure _) -> error $ stdErr
         ExitSuccess -> pure ()
  where
   ass = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
@@ -93,7 +94,12 @@ exitCodeToInt (ExitFailure n) = n
 --mapSetToGraph m = graphFromEdges .
 --  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m
 
-mapSetToGraph :: (Ord a)
+testMap =
+  M.fromList [(0, S.fromList ([1,2]) )
+             ,(1, S.fromList [0])
+             ,(2, S.empty)]
+
+mapSetToGraph :: (Ord a, Show a)
   => Map a (Set a)
   -> (Graph, Map Vertex a, Map a Vertex)
 mapSetToGraph m = (graph, vertexMap, keyMap)

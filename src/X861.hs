@@ -7,25 +7,39 @@ import Data.Set (Set)
 import qualified Data.Set as S
 
 data Program = Program PInfo [(String, Block)]
+  deriving (Show)
 
 data PInfo = PInfo { pInfoLocals :: [String]
                    , pInfoCFG :: Map String (Set String)
-                   , pInfoframeSize :: Int }
+                   , pInfoConflicts :: Map Arg (Set Arg)
+                   , pLocMap :: Map String StoreLoc
+                   , pInfoFrameSize :: Int }
   deriving (Show, Eq)
 
+emptyPInfo :: PInfo
+emptyPInfo = PInfo { pInfoLocals = []
+                   , pInfoCFG = M.empty
+                   , pInfoConflicts = M.empty
+                   , pLocMap = M.empty
+                   , pInfoFrameSize = -1 }
+
 data Block = Block BInfo [Instr]
+  deriving (Show)
 
 data BInfo = BInfo { bInfoLiveAfterSets :: [Set Arg]
                    , bInfoConflicts     :: Map Arg (Set Arg)
                    , bInfoMoveRelated   :: Map Arg (Set Arg) }
   deriving (Show, Eq)
 
+emptyBInfo :: BInfo
+emptyBInfo = BInfo [] M.empty M.empty
 
 data Instr = Addq Arg Arg | Subq Arg Arg | Movq Arg Arg | Retq
            | Negq Arg | Callq String | Pushq Arg | Popq Arg
            | Jmp String | Xorq Arg Arg | Cmpq Arg Arg | Set CC Arg
            | Movzbq Arg Arg | JmpIf CC String
            | Label String
+  deriving (Show)
 
 data Arg = Num Int
          | Reg Register
@@ -35,6 +49,10 @@ data Arg = Num Int
   deriving (Show, Eq, Ord)
 
 data CC = CCEq | CCL | CCLe | CCG | CCGe
+  deriving (Show)
+
+data StoreLoc = RegLoc Register | Stack Int
+  deriving (Show, Eq)
 
 instance PrettyPrint Arg where
   prettyPrint (Num x) = '$': show x
@@ -42,7 +60,7 @@ instance PrettyPrint Arg where
   prettyPrint (Deref r off) =
     show off ++ "(" ++ prettyPrint r ++ ")"
   prettyPrint (Var _) = error $ "Attempted to prettyPrint a variable"
-  prettyPrint (ByteReg r) = undefined
+  prettyPrint (ByteReg r) = prettyPrint r
 
 instance PrettyPrint CC where
   prettyPrint CCEq = "e"
@@ -63,15 +81,15 @@ instance PrettyPrint Instr where
   prettyPrint (Jmp s)        = "jmp " ++ s ++ "\n"
   prettyPrint (Xorq aL aR)   = prettyPrintBinOp "xorq" aL aR
   prettyPrint (Cmpq aL aR)   = prettyPrintBinOp "cmpq" aL aR
-  prettyPrint (Set cc a)     = undefined
-  prettyPrint (Movzbq aL aR) = undefined
-  prettyPrint (JmpIf cc s)   = "j" ++ prettyPrint cc ++ " " ++ s
-  prettyPrint (Label s)      = undefined
+  prettyPrint (Set cc a)     = "set" ++ prettyPrint cc ++ " " ++ prettyPrint a ++ "\n"
+  prettyPrint (Movzbq aL aR) = prettyPrintBinOp "movzbq" aL aR
+  prettyPrint (JmpIf cc s)   = "j" ++ prettyPrint cc ++ " " ++ s ++ "\n"
+  prettyPrint (Label _)      = undefined
 
 prettyPrintBinOp :: (PrettyPrint a, PrettyPrint b) =>
   String -> a -> b -> String
 prettyPrintBinOp op randL randR =
-  op ++ prettyPrint randL ++ ", " ++ prettyPrint randR ++ "\n"
+  op ++ " " ++ prettyPrint randL ++ ", " ++ prettyPrint randR ++ "\n"
 
 
 instance PrettyPrint Block where
@@ -85,9 +103,6 @@ instance PrettyPrint Program where
        "\n\t.globl main\n" ++ "main:\n" ++ prettyPrint block
      printBlock (label, block) =
        label ++ ":\n" ++ prettyPrint block
-
-emptyBInfo :: BInfo
-emptyBInfo = BInfo [] M.empty M.empty
 
 isVar :: Arg -> Bool
 isVar (Var _) = True

@@ -22,8 +22,8 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
-  --[ch4Tests]
+  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
+  [ch4Tests]
 
 {----- Chapter 1 Tests -----}
 
@@ -175,49 +175,88 @@ ch4TypeCheckFail = typeCheckFailTest R2.parse R2.typeCheck
 
 ch4InterpTest = interpTest R2.parse R2.typeCheck R2.interp
 
+ch4CompileTest :: String -> TestTree
+ch4CompileTest =
+  compileTest R2.parse R2.typeCheck R2.interp Ch4.compile
+
 ch4StepTest =
   testCompileStep R2.parse R2.typeCheck id (Ch4.rco . Ch4.uniquify . Ch4.shrink) R2.interp "RCO"
 
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
-  [ parseTest R2.parse testExpr22
-  , parseTest R2.parse testExpr26
-  , parseTest R2.parse testExpr27
-  , parseTest R2.parse testExpr28
-  , parseTest R2.parse testExpr29
-  , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
-  , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
-  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  , ch4TypeCheckFail "(cmp <= #t 3)"
-  , ch4TypeCheckFail "(let ([x 2]) y)"
-  , ch4TypeCheckFail "(- #t)"
-  , ch4TypeCheckFail "(+ #t 2)"
-  , ch4TypeCheckFail "(or 2 #f)"
-  , ch4TypeCheck testExpr26 R2.TBool
-  , ch4TypeCheck testExpr27 R2.TBool
-  , ch4TypeCheck testExpr29 R2.TBool
-  , ch4TypeCheck testExpr30 R2.TBool
-  , ch4TypeCheck testExpr31 R2.TBool
-  , ch4InterpTest testExpr26 [] 1
-  , ch4InterpTest testExpr27 [] 0
-  , ch4InterpTest testExpr28 [] 1
-  , ch4InterpTest testExpr29 [] 0
-  , ch4InterpTest testExpr30 [5] 1
-  , ch4InterpTest testExpr31 [2,3] 0
-  , ch4InterpTest testExpr32 [50] (-50)
-  , ch4InterpTest testExpr33 [] 10
-  , ch4StepTest testExpr26
-  , ch4StepTest testExpr27
-  , ch4StepTest testExpr28
-  , ch4StepTest testExpr29
-  , ch4StepTest testExpr30
-  , ch4StepTest testExpr31
+  [-- parseTest R2.parse testExpr22
+  --, parseTest R2.parse testExpr26
+  --, parseTest R2.parse testExpr27
+  --, parseTest R2.parse testExpr28
+  --, parseTest R2.parse testExpr29
+  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  --, ch4TypeCheckFail "(cmp <= #t 3)"
+  --, ch4TypeCheckFail "(let ([x 2]) y)"
+  --, ch4TypeCheckFail "(- #t)"
+  --, ch4TypeCheckFail "(+ #t 2)"
+  --, ch4TypeCheckFail "(or 2 #f)"
+  --, ch4TypeCheck testExpr26 R2.TBool
+  --, ch4TypeCheck testExpr27 R2.TBool
+  --, ch4TypeCheck testExpr29 R2.TBool
+  --, ch4TypeCheck testExpr30 R2.TBool
+  --, ch4TypeCheck testExpr31 R2.TBool
+  --, ch4InterpTest testExpr26 [] 1
+  --, ch4InterpTest testExpr27 [] 0
+  --, ch4InterpTest testExpr28 [] 1
+  --, ch4InterpTest testExpr29 [] 0
+  --, ch4InterpTest testExpr30 [5] 1
+  --, ch4InterpTest testExpr31 [2,3] 0
+  --, ch4InterpTest testExpr32 [50] (-50)
+  --, ch4InterpTest testExpr33 [] 10
+  --, ch4StepTest testExpr26
+  --, ch4StepTest testExpr27
+  --, ch4StepTest testExpr28
+  --, ch4StepTest testExpr29
+  --, ch4StepTest testExpr30
+  --, ch4StepTest testExpr31
+ -- , ch4CompileTest testExpr1
+ -- , ch4CompileTest testExpr2
+ -- , ch4CompileTest testExpr3
+ -- , ch4CompileTest testExpr4
+ -- , ch4CompileTest testExpr5
+ -- , ch4CompileTest testExpr6
+ -- , ch4CompileTest testExpr7
+ -- , ch4CompileTest testExpr8
+ -- , ch4CompileTest testExpr9
+ -- , ch4CompileTest testExpr10
+ -- , ch4CompileTest testExpr11
+ -- , ch4CompileTest testExpr12
+ -- , ch4CompileTest testExpr13
+ -- , ch4CompileTest testExpr14
+ -- , ch4CompileTest testExpr15
+ -- , ch4CompileTest testExpr16
+ -- , ch4CompileTest testExpr17
+ -- , ch4CompileTest testExpr18
+ -- , ch4CompileTest testExpr19
+ -- , ch4CompileTest testExpr20
+ -- , ch4CompileTest testExpr21
+ -- , ch4CompileTest testExpr22
+ -- , ch4CompileTest testExpr23
+ -- , ch4CompileTest testExpr24
+ -- , ch4CompileTest testExpr25
+ -- , ch4CompileTest testExpr26
+ --, ch4CompileTest testExpr27
+ -- ch4CompileTest testExpr28
+   ch4CompileTest testExpr29
+  , ch4CompileTest testExpr30
+  , ch4CompileTest testExpr31
+  , ch4CompileTest testExpr32
+  , ch4CompileTest testExpr33
   ]
 
 testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
 testExpr27 = "(if (and #t #f) (or #t #f) #f)"
+
 testExpr28 = "(if (and #t #f) #f (cmp <= 2 3))"
+
 testExpr29 = "(if (not #f) (cmp > 2 3) #f)"
 testExpr30 = "(let ([x (read)]) (if (cmp <= x 3) (and #t #f) (or #t #f)))"
 testExpr31 = "(let ([x (read)]) (let ([y (read)]) (cmp >= x y)))"

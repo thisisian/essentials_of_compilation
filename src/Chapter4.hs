@@ -6,16 +6,35 @@ import qualified X861 as X1
 
 import Control.Monad
 import Control.Monad.State.Strict
-import Data.Maybe
-import Data.Tuple
 import Data.Graph
+import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.List
 import Data.Set (Set)
+import Data.Tuple
 import qualified Data.Set as S
+
+import Safe
+import Debug.Trace
 
 import Common
 import Color
+
+compile :: R2.Program -> String
+compile =
+  prettyPrint
+  . patchInstructions
+  . allocateRegisters
+  . buildInterference
+  . uncoverLive
+  . selectInstructions
+  . uncoverLocals
+  . buildCFG
+  . explicateControl
+  . rco
+  . uniquify
+  . shrink
 
 {----- Shrink -----}
 
@@ -163,7 +182,9 @@ rcoArg (R2.Cmp cmp eL eR)
   | cmp == R2.Eq || cmp == R2.Lt = do
       (bindingsL, eL') <- rcoArg eL
       (bindingsR, eR') <- rcoArg eR
-      return $ (bindingsL++bindingsR , R2.Cmp cmp eL' eR')
+      n <- fresh
+      return $ ( bindingsL ++ bindingsR ++ [(n, R2.Cmp cmp eL' eR')]
+               , R2.Var n)
   | otherwise = error $ "Found " ++ show cmp ++ "in RCO step."
 rcoArg (R2.If cond eT eF) = do
   cond' <- rcoExpr cond
@@ -236,6 +257,11 @@ ecPred (R2.Cmp cmp eL eR) t1 t2 = do
   l1 <- newBlock t1
   l2 <- newBlock t2
   return $ C1.If (ecCmp cmp) (ecArg eL) (ecArg eR) l1 l2
+-- Unsure about this - IJW
+ecPred (R2.Let s eB e) t1 t2 = do
+  e' <- ecPred e t1 t2
+  ecAssign eB s e'
+
 ecPred e _ _ = error $ "ecPred: " ++ show e
 
 ecAssign :: R2.Expr -> String -> C1.Tail -> State EcS C1.Tail
@@ -282,8 +308,10 @@ mkCFG :: [(String, C1.Tail)]
       -> Map String (Set String)
       -> Map String (Set String)
 mkCFG ((s, b):bs) m = case b of
-  C1.Seq _ t  -> mkCFG ((s,t):bs) m
-  C1.Return _ -> mkCFG bs m
+  C1.Seq _ t  -> mkCFG ((s, t):bs) m
+  C1.Return _ ->
+    let m' = M.insert s S.empty m
+    in mkCFG bs m' -- Should have it add empty set -- IJW
   C1.Goto b'   ->
     let m' = M.insert s (S.singleton b') m
     in mkCFG bs m'
@@ -309,15 +337,15 @@ collectLocals (C1.If _ _ _ _ _) = []
 {- Select Instructions -}
 
 selectInstructions :: C1.Program -> X1.Program
-selectInstructions (C1.Pgrm info [(l, t)]) =
-  X1.Program
-    (X1.PInfo
-     { X1.pInfoLocals = C1.infoLocals info
-     , X1.pInfoCFG = C1.infoCFG info
-     , X1.pInfoframeSize = -1 })
-    [(l, X1.Block X1.emptyBInfo (siTail t))]
+selectInstructions (C1.Pgrm info bs) =
+  (X1.Program
+    X1.emptyPInfo { X1.pInfoLocals = C1.infoLocals info
+                  , X1.pInfoCFG = C1.infoCFG info }
+    bs')
  where
-selectInstructions (C1.Pgrm _ _) = error "Expected only one label"
+  bs' = map (\(l, b) -> (l, mkBlock . siTail $ b)) bs
+  mkBlock is = X1.Block X1.emptyBInfo is
+
 
 siTail :: C1.Tail -> [X1.Instr]
 siTail (C1.Return (C1.Plain a))    =
@@ -392,15 +420,17 @@ siCompare (C1.Lt) = X1.CCL
 {- Uncover Live -}
 
 uncoverLive :: X1.Program -> X1.Program
-uncoverLive (X1.Program info bs) =
-  X1.Program info (ulBlocks bs cfg trav M.empty)
+uncoverLive (X1.Program info bs) = X1.Program info bs'
 
  where
+   bs' = ulBlocks bs cfg trav M.empty
    cfg = X1.pInfoCFG info
-   (g, v2s, _) = mapSetToGraph cfg
+
    trav =
      map (\v -> fromJust $ M.lookup v v2s)
-     .  topSort . transposeG $ g
+     . topSort . transposeG $ g
+
+   (g, v2s, _) = mapSetToGraph cfg
 
 
 ulBlocks :: [(String, X1.Block)]
@@ -408,22 +438,28 @@ ulBlocks :: [(String, X1.Block)]
          -> [String]
          -> Map String [Set X1.Arg]
          -> [(String, X1.Block)]
-ulBlocks bs cfg (s:ss) m =
-  case M.lookup s cfg of
-    Nothing ->
-      let (X1.Block _ is) = fromJust $ lookup s bs
+ulBlocks bs cfg (s:ss) m = case M.lookup s cfg of
+  Nothing -> error $ s ++ " is not in CFG"
+  Just succs ->
+    if null succs then
+      let (X1.Block _ is) = fromMaybe
+            (error $ "ulBocks:Find to find " ++ show s ++ " in CFG")
+            $ lookup s bs
           m' = M.insert s (mkLiveAfterSets is S.empty) m
       in ulBlocks bs cfg ss m'
-    Just succs ->
-      let init =
+    else
+      let init' =
             foldr S.union S.empty
-            . head
-            . map (fromJust . (flip M.lookup m))
+            . headNote ("One")
+            . map (\s' ->
+                     (fromMaybe
+                        (error $ "ulBlocks: Failed to find " ++ show s' ++
+                         " in liveAfterSets map") $ M.lookup s' m))
             . S.toList
             $ succs
           (X1.Block _ is) = fromJust $ lookup s bs
-          m' = M.insert s (mkLiveAfterSets is init) m
-      in ulBlocks bs cfg ss m'
+          m' = M.insert s (mkLiveAfterSets is init') m
+       in ulBlocks bs cfg ss m'
 ulBlocks bs _ [] m =
   M.toList
   . M.mapWithKey
@@ -433,7 +469,7 @@ ulBlocks bs _ [] m =
 
 
 mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
-mkLiveAfterSets is init = reverse $ mkSets init (reverse is)
+mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
 
 mkSets :: S.Set X1.Arg -> [X1.Instr] -> [S.Set X1.Arg]
 mkSets set (i:is) = set : (mkSets set' is)
@@ -453,19 +489,29 @@ mkSets set (i:is) = set : (mkSets set' is)
 
 mkSets _ [] = []
 
-
 {- Build Interference -}
 
-buildInterference :: X1.Program -> X1.Program
-buildInterference (X1.Program i bs) = (X1.Program i bs')
- where bs' = map (\(l, b) -> (l, bIBlock b)) bs
+-- This builds the interference graph on a per-block basis, which
+-- may be incorrect...
+--
+--buildInterference :: X1.Program -> X1.Program
+--buildInterference (X1.Program i bs) = (X1.Program i bs')
+-- where bs' = map (\(l, b) -> (l, bIBlock b)) bs
+--
+--bIBlock :: X1.Block -> X1.Block
+--bIBlock (X1.Block i' is) = (X1.Block i is)
+-- where
+--  i =
+--    i' { X1.bInfoConflicts =
+--           buildInterfere (X1.bInfoLiveAfterSets i) is }
 
-bIBlock :: X1.Block -> X1.Block
-bIBlock (X1.Block i' is) = (X1.Block i is)
+buildInterference :: X1.Program -> X1.Program
+buildInterference (X1.Program info bs) = {- trace ("\ninfo: " ++ show info') -} X1.Program info' bs
  where
-  i =
-    i' { X1.bInfoConflicts =
-           buildInterfere (X1.bInfoLiveAfterSets i) is }
+   info' = info { X1.pInfoConflicts = buildInterfere sets insts }
+   sets = concatMap (\(_, (X1.Block binfo _)) -> X1.bInfoLiveAfterSets binfo)
+            bs
+   insts = concatMap (\(_, (X1.Block _ is)) -> is) bs
 
 buildInterfere
   :: [S.Set X1.Arg]
@@ -505,7 +551,6 @@ buildInterfere' (la:las) (i:is) =
       buildInterfere' las is
     _             -> buildInterfere' las is
 
-
  where
   addEdges
     :: X1.Arg
@@ -527,72 +572,15 @@ buildInterfere' (la:las) (i:is) =
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
 
-{-- Assign Homes --}
-assignHomes = undefined
---assignHomes'
---  :: M.Map String PX.StoreLoc
---  -> PX.Program
---  -> X.Program
---assignHomes' locMap (PX.Program _ bs) =
---  X.Program info' bs'
--- where
---  info' = X.PInfo (frameSize locMap)
---  bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
---
---ahBlock :: M.Map String PX.StoreLoc -> PX.Block -> X.Block
---ahBlock m (PX.Block _ instrs) =
---  X.Block X.BInfo (map (ahInstr m) instrs)
---
---ahInstr :: M.Map String PX.StoreLoc -> PX.Instr -> X.Instr
---ahInstr m (PX.Addq aL aR) = X.Addq (ahArg m aL) (ahArg m aR)
---ahInstr m (PX.Subq aL aR) = X.Subq (ahArg m aL) (ahArg m aR)
---ahInstr m (PX.Movq aL aR) = X.Movq (ahArg m aL) (ahArg m aR)
---ahInstr _ PX.Retq         = X.Retq
---ahInstr m (PX.Negq a)     = X.Negq (ahArg m a)
---ahInstr _ (PX.Callq s)    = X.Callq s
---ahInstr _ (PX.Jmp s)    =   X.Jmp s
---ahInstr _ i = error $ "Unimplemented: " ++ show i
---
---ahArg :: M.Map String PX.StoreLoc -> PX.Arg -> X.Arg
---ahArg _ (PX.Num x) = X.Num x
---ahArg m (PX.Var s) = case M.lookup s m of
---  Nothing -> error $ "Assign homes: Variable " ++ s ++ " not found in map."
---  Just (PX.RegLoc r) -> X.Reg r
---  Just (PX.Stack n)  -> X.Deref Rbp n
---ahArg _ (PX.Reg Rax) = X.Reg Rax
---ahArg _ _ = undefined
---
---createLocMap :: PX.Program -> M.Map String PX.StoreLoc
---createLocMap (PX.Program info _) =
---  M.fromList (zip locals (map PX.Stack [-8,-16..]))
--- where locals = PX.pInfoLocals info
---
---frameSize :: M.Map String PX.StoreLoc -> Int
---frameSize locMap =
---  if nBytes `mod` 16 == 0
---  then nBytes
---  else 16 * ((nBytes `div` 16) + 1)
--- where
---   nBytes =  negate
---             . foldr (\n acc -> if n < acc then n else acc) 0
---             . mapMaybe (\x -> case x of
---                          (PX.Stack n) -> Just n
---                          _            -> Nothing)
---             . M.elems
---             $ locMap
 {-- Allocate Registers --}
 
-data StoreLoc = RegLoc Register | Stack Int
-  deriving (Show)
-
 allocateRegisters :: X1.Program -> X1.Program
-allocateRegisters p@(X1.Program _ bs) = assignHomes locMap p
+allocateRegisters p@(X1.Program info bs) = {- trace ("\npInfoConflicts: " ++ (show $ X1.pInfoConflicts info)) -} assignHomes locMap p
  where
-   (X1.Block info _) = snd . head $ bs
    locMap =
          colorGraph
-           (X1.bInfoConflicts info)
-           (X1.bInfoMoveRelated info)
+           (X1.pInfoConflicts info)
+           (M.empty)
 
 alBlock :: X1.Block -> X1.Block
 alBlock (X1.Block i is) =
@@ -600,9 +588,9 @@ alBlock (X1.Block i is) =
         colorGraph
           (X1.bInfoConflicts i)
           (X1.bInfoMoveRelated i)
-  in (X1.Block X1.BInfo (map (alInstr storeLocs) is))
+  in (X1.Block i (map (alInstr storeLocs) is))
 
-alInstr :: M.Map String StoreLoc -> X1.Instr -> X1.Instr
+alInstr :: M.Map String X1.StoreLoc -> X1.Instr -> X1.Instr
 alInstr m (X1.Addq aL aR) = (X1.Addq (alArg m aL) (alArg m aR))
 alInstr m (X1.Movq aL aR) = (X1.Movq (alArg m aL) (alArg m aR))
 alInstr m (X1.Subq aL aR) = (X1.Subq (alArg m aL) (alArg m aR))
@@ -612,27 +600,30 @@ alInstr _ (X1.Callq s)    = X1.Callq s
 alInstr _ (X1.Jmp s)      = X1.Jmp s
 alInstr _ i               = error $ "alInstr: " ++ show i
 
-alArg :: M.Map String StoreLoc -> X1.Arg -> X1.Arg
+alArg :: M.Map String X1.StoreLoc -> X1.Arg -> X1.Arg
 alArg m (X1.Var s) = case M.lookup s m of
   Nothing -> (X1.Reg (Rcx)) -- Wha should it map to?
-  Just (RegLoc r) -> (X1.Reg r)
-  Just (Stack n) -> (X1.Deref Rbp n)
-alArg _ (X1.Num x) = (X1.Num x)
-alArg _ (X1.Deref r x) = (X1.Deref r x)
-alArg _ (X1.Reg r) = (X1.Reg r)
+  Just (X1.RegLoc r) -> (X1.Reg r)
+  Just (X1.Stack n) -> (X1.Deref Rbp n)
+alArg _ a@(X1.Num _)     = a
+alArg _ a@(X1.Deref _ _) = a
+alArg _ a@(X1.Reg _)     = a
+alArg _ a@(X1.ByteReg _) = a
 
--- Returns list of Strings to StoreLocs and frameSize
+-- Returns list of Strings to X1.StoreLocs and frameSize
 colorGraph
   :: (Map X1.Arg (Set X1.Arg))
   -> (Map X1.Arg (Set X1.Arg))
-  -> (Map String StoreLoc)
+  -> (Map String X1.StoreLoc)
 colorGraph iList mvBList  =
   let
     (g', nodeFromVertex, vertexFromNode) = toGraph iList
+
     vertexAssoc =
       map (\v -> let (_, a, _) = nodeFromVertex v in (v, a))
       . vertices
       $ g'
+
     regVerts :: [(Vertex, X1.Arg)]
     regVerts = filter (\(_, a) -> X1.isReg a) vertexAssoc
 
@@ -692,19 +683,148 @@ regsToUse = [ Rbx ]
 regIntAssoc :: [(Int, Register)]
 regIntAssoc = zip [0..] regsToUse
 
-storeLocFromColor :: Int -> StoreLoc
+storeLocFromColor :: Int -> X1.StoreLoc
 storeLocFromColor n = case lookup n regIntAssoc of
-  Just r -> RegLoc r
-  Nothing -> Stack $ negate $ 8 * (n - (length regIntAssoc))
+  Just r -> X1.RegLoc r
+  Nothing -> X1.Stack $ negate $ 8 * (n - (length regIntAssoc))
 
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
+{-- Assign Homes --}
+
+assignHomes
+  :: M.Map String X1.StoreLoc
+  -> X1.Program
+  -> X1.Program
+assignHomes locMap (X1.Program info bs) = {- trace ("\nlocMap: " ++ show locMap) $ -}
+  X1.Program info' bs'
+ where
+  info' = info { X1.pInfoFrameSize = frameSize locMap }
+  bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
+
+ahBlock :: M.Map String X1.StoreLoc -> X1.Block -> X1.Block
+ahBlock m (X1.Block info instrs) =
+  X1.Block info (map (ahInstr m) instrs)
+
+ahInstr :: M.Map String X1.StoreLoc -> X1.Instr -> X1.Instr
+ahInstr m (X1.Addq aL aR)   = X1.Addq (ahArg m aL) (ahArg m aR)
+ahInstr m (X1.Subq aL aR)   = X1.Subq (ahArg m aL) (ahArg m aR)
+ahInstr m (X1.Movq aL aR)   = X1.Movq (ahArg m aL) (ahArg m aR)
+ahInstr m (X1.Movzbq aL aR) = X1.Movzbq (ahArg m aL) (ahArg m aR)
+ahInstr _ X1.Retq           = X1.Retq
+ahInstr m (X1.Negq a)       = X1.Negq (ahArg m a)
+ahInstr _ i@(X1.Callq _)    = i
+ahInstr _ i@(X1.Jmp _)      = i
+ahInstr _ i@(X1.Pushq _)    = i
+ahInstr m (X1.Xorq aL aR)   = X1.Xorq (ahArg m aL) (ahArg m aR)
+ahInstr m (X1.Cmpq aL aR)   = X1.Cmpq (ahArg m aL) (ahArg m aR)
+ahInstr m (X1.Set cc a)     = X1.Set cc (ahArg m a)
+ahInstr _ i@(X1.JmpIf _ _)  = i
+ahInstr _ i@(X1.Label _)    = i
+ahInstr _ i@(X1.Popq _)     = i
+
+ahArg :: M.Map String X1.StoreLoc -> X1.Arg -> X1.Arg
+ahArg _ a@(X1.Num _) = a
+ahArg m (X1.Var s) = case M.lookup s m of
+  Nothing -> error $ "Assign homes: Variable " ++ s ++ " not found in map."
+  Just (X1.RegLoc r) -> X1.Reg r
+  Just (X1.Stack n)  -> X1.Deref Rbp n
+ahArg _ a@(X1.Reg _) = a
+ahArg _ a@(X1.Deref _ _) = a
+ahArg _ a@(X1.ByteReg _) = a
+
+createLocMap :: X1.Program -> M.Map String X1.StoreLoc
+createLocMap (X1.Program info _) =
+  M.fromList (zip locals (map X1.Stack [-8,-16..]))
+ where locals = X1.pInfoLocals info
+
+frameSize :: M.Map String X1.StoreLoc -> Int
+frameSize locMap =
+  if nBytes `mod` 16 == 0
+  then nBytes
+  else 16 * ((nBytes `div` 16) + 1)
+ where
+   nBytes =  negate
+             . foldr (\n acc -> if n < acc then n else acc) 0
+             . mapMaybe (\x -> case x of
+                          (X1.Stack n) -> Just n
+                          _            -> Nothing)
+             . M.elems
+             $ locMap
+
+{- Patch Instructions -}
+
+patchInstructions :: X1.Program -> X1.Program
+patchInstructions (X1.Program info bs) = X1.Program info bs'
+
+ where
+  bs' = intro fSize : conclusion fSize : map (\(l, b) -> (l, pBlock b)) bs
+  fSize = X1.pInfoFrameSize info
+
+intro :: Int -> (String, X1.Block)
+intro fSize
+  | fSize == 0 = ( "main",
+  X1.Block X1.emptyBInfo
+    [ X1.Pushq (X1.Reg Rbp)
+    , X1.Movq (X1.Reg Rsp) (X1.Reg Rbp)
+    , X1.Jmp "start" ] )
+  | otherwise  = ( "main",
+  X1.Block X1.emptyBInfo
+    [ X1.Pushq (X1.Reg Rbp)
+    , X1.Movq (X1.Reg Rsp) (X1.Reg Rbp)
+    , X1.Subq (X1.Num fSize) (X1.Reg Rsp)
+    , X1.Jmp "start" ] )
+
+conclusion :: Int -> (String, X1.Block)
+conclusion fSize
+  | fSize == 0 =
+    ( "conclusion", X1.Block X1.emptyBInfo
+      [ X1.Popq (X1.Reg Rbp)
+      , X1.Retq ] )
+  | otherwise  =
+    ( "conclusion", X1.Block X1.emptyBInfo
+      [ X1.Addq (X1.Num fSize) (X1.Reg Rsp)
+      , X1.Popq (X1.Reg Rbp)
+      , X1.Retq ] )
+
+pBlock :: X1.Block -> X1.Block
+pBlock (X1.Block info instrs) = X1.Block info (concatMap pInstrs instrs)
+
+pInstrs :: X1.Instr -> [X1.Instr]
+pInstrs (X1.Movq (X1.Deref regL offL) (X1.Deref regR offR)) =
+  [ X1.Movq (X1.Deref regL offL) (X1.Reg Rax)
+  , X1.Movq (X1.Reg Rax) (X1.Deref regR offR) ]
+pInstrs (X1.Addq (X1.Deref regL offL) (X1.Deref regR offR)) =
+  [ X1.Movq (X1.Deref regL offL) (X1.Reg Rax)
+  , X1.Addq (X1.Reg Rax) (X1.Deref regR offR) ]
+pInstrs (X1.Subq (X1.Deref regL offL) (X1.Deref regR offR)) =
+  [ X1.Movq (X1.Deref regL offL) (X1.Reg Rax)
+  , X1.Subq (X1.Reg Rax) (X1.Deref regR offR) ]
+pInstrs (X1.Xorq (X1.Deref regL offL) (X1.Deref regR offR)) =
+  [ X1.Movq (X1.Deref regL offL) (X1.Reg Rax)
+  , X1.Xorq (X1.Reg Rax) (X1.Deref regR offR) ]
+pInstrs (X1.Cmpq l@(X1.Deref _ _) r@(X1.Deref _ _)) =
+  [ X1.Movq l (X1.Reg Rax)
+  , X1.Cmpq (X1.Reg Rax) r ]
+pInstrs (X1.Cmpq l r@(X1.Num _)) =
+  [ X1.Movq r (X1.Reg Rax)
+  , X1.Cmpq l (X1.Reg Rax) ]
+pInstrs (X1.Movzbq l (X1.Deref regR offR)) =
+  [ X1.Movq (X1.Deref regR offR) (X1.Reg Rax)
+  , X1.Movzbq l (X1.Reg Rax) ]
+
+pInstrs i@(X1.Movq a1 a2) = [i | not $ a1 == a2]
+pInstrs i = [i]
+
+{- End -}
+
+--testProg = "(if (if (cmp eq? (read) 1) (cmp eq? (read) 0) (cmp eq? (read) 2)) (+ 10 32) (+ 700 77))"
 
 
-testProg = case R2.parse prog of
-  (Left e) -> error $ show e
-  (Right prog') -> prog'
-  where prog = "(if (if (cmp eq? (read) 1) (cmp eq? (read) 0) (cmp eq? (read) 2)) (+ 10 32) (+ 700 77))"
+testProg = "(if (and #t #f) #f (cmp <= 2 3))"
 
-ch4Test = putStrLn (show $ rco testProg)
+--ch4Test = putStrLn (show $ rco testProg)
+
+compileTest =
+  compileToFile R2.parse compile testProg "./test/ch4test"

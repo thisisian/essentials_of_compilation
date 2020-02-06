@@ -74,6 +74,11 @@ instance Show Info where
 parse :: Parser Program
 parse = Parsec.parse pProgram ""
 
+parseError :: String -> Program
+parseError s = case Parsec.parse pProgram "" s of
+  Left e -> error $ show e
+  Right s -> s
+
 pProgram = Program Info <$> pExpr
 
 pExpr = pNum <|> pVar <|> pTrue <|> pFalse <|> pParens pExpr'
