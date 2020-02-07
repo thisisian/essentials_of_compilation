@@ -32,7 +32,7 @@ data BInfo = BInfo { bInfoLiveAfterSets :: [Set Arg]
 emptyBInfo :: BInfo
 emptyBInfo = BInfo [] M.empty M.empty
 
-data PInfo = PInfo { pInfoLocals :: [String] }
+newtype PInfo = PInfo { pInfoLocals :: [String] }
   deriving (Show, Eq)
 
 callerSaved :: Set Register

@@ -11,5 +11,5 @@ data Tail = Return Expr | Seq Assign Tail
 data Program = Pgrm Info [(String, Tail)]
   deriving (Show, Eq)
 
-data Info = Locals [String]
+newtype Info = Locals [String]
   deriving (Show, Eq)

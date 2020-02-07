@@ -28,7 +28,7 @@ type TypeChecker a t = (a -> Either TypeError t)
 
 type Compiler a = (a -> String)
 
-data ParseException = ParseException String
+newtype ParseException = ParseException String
 
 instance Show ParseException where
   show (ParseException e) = e
@@ -47,7 +47,7 @@ compileToFile
   -> String        -- ^ Program
   -> FilePath      -- ^ Output file
   -> IO ()
-compileToFile p c prog fp = do
+compileToFile p c prog fp =
   case p prog of
     Left e -> throw (ParseException (show e))
     Right prog' -> do
@@ -55,7 +55,7 @@ compileToFile p c prog fp = do
       (exitCode, _, stdErr) <- readProcessWithExitCode "gcc"
           ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
       case exitCode of
-        (ExitFailure _) -> error $ stdErr
+        (ExitFailure _) -> error stdErr
         ExitSuccess -> pure ()
  where
   ass = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
@@ -115,7 +115,7 @@ mapSetToGraph m = (graph, vertexMap, keyMap)
     graphFromEdges
     . map (\(k, ks) -> ((), k, ks))
     . M.toList
-    . M.map (S.toList)
+    . M.map S.toList
     $ m
 
 {---- A monad for generating unique variable names -----}

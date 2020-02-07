@@ -230,9 +230,9 @@ frameSize locMap =
  where
    nBytes =  negate
              . foldr (\n acc -> if n < acc then n else acc) 0
-             . mapMaybe (\x -> case x of
-                          (PX.Stack n) -> Just n
-                          _            -> Nothing)
+             . mapMaybe (\case
+                            (PX.Stack n) -> Just n
+                            _            -> Nothing)
              . M.elems
              $ locMap
 
@@ -284,5 +284,5 @@ pInstrs (X.Addq (X.Deref regL offL) (X.Deref regR offR)) =
 pInstrs (X.Subq (X.Deref regL offL) (X.Deref regR offR)) =
   [ X.Movq (X.Deref regL offL) (X.Reg Rax)
   , X.Subq (X.Reg Rax) (X.Deref regR offR) ]
-pInstrs i@(X.Movq a1 a2) = [i | not $ a1 == a2]
+pInstrs i@(X.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]

@@ -7,7 +7,7 @@ import qualified Data.Set as S
 data Program a = Program a [(String, Block)]
   deriving (Show)
 
-data Block = Block [Instr]
+newtype Block = Block [Instr]
   deriving (Show)
 
 data Instr = Addq Arg Arg | Subq Arg Arg | Movq Arg Arg | Retq
@@ -35,7 +35,7 @@ instance PrettyPrint Arg where
   prettyPrint (Reg r) = prettyPrint r
   prettyPrint (Deref r off) =
     show off ++ "(" ++ prettyPrint r ++ ")"
-  prettyPrint (Var _) = error $ "Attempted to prettyPrint a variable"
+  prettyPrint (Var _) = error "Attempted to prettyPrint a variable!"
   prettyPrint (ByteReg r) = prettyPrint r
 
 instance PrettyPrint CC where
@@ -96,7 +96,7 @@ writeArgs (Popq a)     = Just (S.singleton a)
 writeArgs (Xorq _ a)   = Just (S.singleton a)
 writeArgs (Movzbq _ a) = Just (S.singleton a)
 writeArgs (Pushq _)    = Nothing
-writeArgs (Retq)       = Nothing
+writeArgs Retq         = Nothing
 writeArgs (Callq _)    = Nothing
 writeArgs (Jmp _)      = Nothing
 writeArgs (Cmpq _ _)   = Nothing
@@ -119,4 +119,4 @@ readArgs (Callq _)    = Nothing
 readArgs (Jmp _)      = Nothing
 readArgs (JmpIf _ _)  = Nothing
 readArgs (Label _)    = Nothing
-readArgs (Retq)       = Nothing
+readArgs Retq         = Nothing

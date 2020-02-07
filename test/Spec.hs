@@ -22,8 +22,8 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
-  [ch4Tests]
+  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
+  --[ch4Tests]
 
 {----- Chapter 1 -----}
 
@@ -71,32 +71,27 @@ ch1Tests = testGroup "Chapter 1" $
       "(+ 1 (read))"
   ]
 
-
 {----- Chapter 2 -----}
 
---ch2CompileTest :: String -> TestTree
---ch2CompileTest =
---  compileTest R1.parse dummyTypeChecker R1.interp Ch2.compile
---
---ch2Tests = testGroup "Chapter 1" $
---  map (interpTest R1.parse dummyTypeChecker R1.interp
---  [ interpTest R1.parse dummyTypeChecker R1.interp testExpr10 [] 42
---  , interpTest R1.parse dummyTypeChecker R1.interp testExpr11 [] 42
---  , interpTest R1.parse dummyTypeChecker R1.interp testExpr12 [] 42
---  , interpTest R1.parse dummyTypeChecker R1.interp testExpr13 [52, 10] 42
---  ] ++
---  map ch2CompileTest ch2TestExprs
+ch2CompileTest :: String -> TestTree
+ch2CompileTest =
+  compileTest R1.parse dummyTypeChecker R1.interp Ch2.compile
 
-{----- Chapter 3 -----}
+ch2InterpTest :: String -> [Int] -> Int -> TestTree
+ch2InterpTest prog ins expected =
+  interpTest R1.parse dummyTypeChecker R1.interp prog ins expected
 
-ch3CompileTest :: String -> TestTree
-ch3CompileTest =
-  compileTest R1.parse dummyTypeChecker R1.interp Ch3.compile
+ch2Tests = testGroup "Chapter 2" $
+  [ ch2InterpTest "(let ([x (+ 12 20)]) (+ 10 x))" [] 42
+  , ch2InterpTest "(let ([x 32]) (+ (let ([x 10]) x) x))" [] 42
+  , ch2InterpTest "(let ([x (+ 12 20)]) (+ 10 x))" [] 42
+  , ch2InterpTest
+      "(let ([x (read)]) (let ([y (read)]) (+ x (- y))))" [52, 10] 42
+  ] ++
+  map ch2CompileTest ch2TestExprs
 
-ch3Tests = testGroup "Chapter 2" $ map (ch3CompileTest) ch3TestExprs
-
-ch3TestExprs :: [String]
-ch3TestExprs =
+ch2TestExprs :: [String]
+ch2TestExprs =
   [ "(+ 8 2)"
   , "(+ (read) 2)"
   , "(+ (read) (read))"
@@ -124,6 +119,13 @@ ch3TestExprs =
   , "(let ([x 5]) x)"
   ]
 
+{----- Chapter 3 -----}
+
+ch3CompileTest :: String -> TestTree
+ch3CompileTest =
+  compileTest R1.parse dummyTypeChecker R1.interp Ch3.compile
+
+ch3Tests = testGroup "Chapter 3" $ map (ch3CompileTest) ch2TestExprs
 
 {----- Chapter 4 Tests -----}
 
@@ -137,15 +139,12 @@ ch4CompileTest :: String -> TestTree
 ch4CompileTest =
   compileTest R2.parse R2.typeCheck R2.interp Ch4.compile
 
-ch4StepTest =
-  testCompileStep R2.parse R2.typeCheck id (Ch4.rco . Ch4.uniquify . Ch4.shrink) R2.interp "RCO"
-
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
-  [ parseTest R2.parse testExpr26
-  , parseTest R2.parse testExpr27
-  , parseTest R2.parse testExpr28
-  , parseTest R2.parse testExpr29
+  [ parseTest R2.parse (ch4TestExprs !! 1)
+  , parseTest R2.parse (ch4TestExprs !! 2)
+  , parseTest R2.parse (ch4TestExprs !! 3)
+  , parseTest R2.parse (ch4TestExprs !! 4)
   , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
   , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
   , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
@@ -155,49 +154,49 @@ ch4Tests = testGroup "Chapter 4" $
   , ch4TypeCheckFail "(- #t)"
   , ch4TypeCheckFail "(+ #t 2)"
   , ch4TypeCheckFail "(or 2 #f)"
-  , ch4TypeCheck testExpr26 R2.TBool
-  , ch4TypeCheck testExpr27 R2.TBool
-  , ch4TypeCheck testExpr29 R2.TBool
-  , ch4TypeCheck testExpr30 R2.TBool
-  , ch4TypeCheck testExpr31 R2.TBool
-  , ch4InterpTest testExpr27 [] 0
-  , ch4InterpTest testExpr28 [] 1
-  , ch4InterpTest testExpr29 [] 0
-  , ch4InterpTest testExpr30 [5] 1
-  , ch4InterpTest testExpr31 [2,3] 0
-  , ch4InterpTest testExpr32 [50] (-50)
-  , ch4InterpTest testExpr33 [] 10
-  , ch4StepTest testExpr26
-  , ch4StepTest testExpr27
-  , ch4StepTest testExpr28
-  , ch4StepTest testExpr29
-  , ch4StepTest testExpr30
-  , ch4StepTest testExpr31 ] ++
-  map ch4CompileTest ch3TestExprs ++
+  , ch4TypeCheck (ch4TestExprs !! 1) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 2) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 3) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 4) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 5) R2.TBool
+  , ch4InterpTest (ch4TestExprs !! 1) [] 0
+  , ch4InterpTest (ch4TestExprs !! 2) [] 1
+  , ch4InterpTest (ch4TestExprs !! 3) [] 0
+  , ch4InterpTest (ch4TestExprs !! 4) [5] 1
+  , ch4InterpTest (ch4TestExprs !! 5) [2,3] 0
+  , ch4InterpTest (ch4TestExprs !! 6) [50] (-50)
+  , ch4InterpTest (ch4TestExprs !! 7) [] 10
+  ] ++
+  map ch4CompileTest ch2TestExprs ++
+  map ch4CompileTest ch4TestExprs
 
-  [ ch4CompileTest testExpr26
-  , ch4CompileTest testExpr27
-  , ch4CompileTest testExpr28
-  , ch4CompileTest testExpr29
-  , ch4CompileTest testExpr30
-  , ch4CompileTest testExpr31
-  , ch4CompileTest testExpr32
-  , ch4CompileTest testExpr33
-  , ch4CompileTest testExpr34
+ch4TestExprs =
+  [ "(cmp <= (+ 2 3) (- 9 3))"
+  , "(if (and #t #f) (or #t #f) #f)"
+  , "(if (and #t #f) #f (cmp <= 2 3))"
+  , "(if (not #f) (cmp > 2 3) #f)"
+  , "(let ([x (read)]) (if (cmp <= x 3) (and #t #f) (or #t #f)))"
+  , "(let ([x (read)]) (let ([y (read)]) (cmp >= x y)))"
+  , "(- (let ([x (read)]) (if (and #t #t) (if (or #f #f) 90 (if (not #f) (if (cmp eq? x 100) 90 (if (cmp < x 100) x 90)) 90)) 90)))"
+  , "(if (not (not (and #f #t))) 90 10)"
+  , "(let ([x (read)]) (if (cmp <= x 3) #t #f))"
+  , "(and #f #t)"
+  , "(or #f #t)"
+  , "(and #t #f)"
+  , "#t"
+  , "#f"
+  , "(let ([r (read)]) (let ([x #t]) (let ([y (- 2)]) (let ([z (+ 5 9)]) (let ([m y]) (let ([n (not (cmp >= r z))]) (if (cmp eq? r z) (cmp eq? r y) (if (cmp < r m) x #f))))))))"
   ]
 
-testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
-testExpr27 = "(if (and #t #f) (or #t #f) #f)"
-
-testExpr28 = "(if (and #t #f) #f (cmp <= 2 3))"
-
-testExpr29 = "(if (not #f) (cmp > 2 3) #f)"
-testExpr30 = "(let ([x (read)]) (if (cmp <= x 3) (and #t #f) (or #t #f)))"
-testExpr31 = "(let ([x (read)]) (let ([y (read)]) (cmp >= x y)))"
-testExpr32 = "(- (let ([x (read)]) (if (and #t #t) (if (or #f #f) 90 (if (not #f) (if (cmp eq? x 100) 90 (if (cmp < x 100) x 90)) 90)) 90)))"
-testExpr33 = "(if (not (not (and #f #t))) 90 10)"
-testExpr34 = "(let ([x (read)]) (if (cmp <= x 3) #t #f))"
-testExpr35 = "(and #f #t)"
+{-
+  , (let ([r (read)])
+    (let ([x #t])
+    (let ([y (- 2)])
+    (let ([z (+ 5 9)])
+    (let ([m y])
+    (let ([n (not (cmp >= r z))])
+      (if (cmp eq? r z) (cmp eq? r y) (if (cmp < r m) x #f))))))))
+-}
 
 {----- Generalized Tests -----}
 
@@ -303,11 +302,11 @@ compileAndRun c prog ins = do
            ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
          case exitCode of
            (ExitFailure _) -> return $ Left stdOut
-           (ExitSuccess) -> Right <$> runBinary bin ins)
+           ExitSuccess -> Right <$> runBinary bin ins)
      (do removeFile asm
          removeFile bin)
   case result of
-    Left stdOut -> error $ stdOut
+    Left stdOut -> error stdOut
     Right x -> return x
 
  where createEmptyFile f = writeFile f ""

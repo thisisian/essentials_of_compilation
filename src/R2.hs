@@ -60,7 +60,7 @@ instance Show Compare where
   show Gt = ">"
   show Ge = ">="
 
-data Program = Program Expr
+newtype Program = Program Expr
 
 instance Show Program where
   show (Program e) = show e
@@ -188,7 +188,7 @@ interpBinOp
   -> Expr
   -> Expr
   -> State [Int] Int
-interpBinOp env op eL eR = do
+interpBinOp env op eL eR =
   return op `ap` interpExpr env eL `ap` interpExpr env eR
 
 interpBinBoolOp
@@ -226,9 +226,9 @@ instance Show Type where
 typeCheck :: Program -> Either TypeError Type
 typeCheck (Program e) = typeChkExpr M.empty e
 
-typeChkExpr :: (M.Map String Type) -> Expr -> Either TypeError Type
+typeChkExpr :: M.Map String Type -> Expr -> Either TypeError Type
 typeChkExpr _ (Num _) = Right TNum
-typeChkExpr _ (Read)  = Right TNum
+typeChkExpr _ Read  = Right TNum
 typeChkExpr env (Neg e) = typeChkUniOp TNum TNum env e
 typeChkExpr env (Add eL eR) = typeChkBinOp TNum TNum env eL eR
 typeChkExpr env (Sub eL eR) = typeChkBinOp TNum TNum env eL eR

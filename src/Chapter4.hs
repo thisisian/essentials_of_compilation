@@ -23,47 +23,46 @@ compile =
   prettyPrint
   . patchInstructions
   . assignHomes
-  . allocateRegisters -- :: X1.Program IGraph -> X1.Program LocMap
-  . buildInterference -- :: X1.Program (CFG, Locals, LiveSets) -> X1.Program IGraph
-  . uncoverLive--  :: X1.Program (CFG, Locals) -> (X1.Program (CFG, Locals, LiveSets)
-  . selectInstructions -- :: C1.Program (CFG, Locals) -> X1.Program (CFG, Locals)
-  . buildCFG --  :: C1.Program () -> C1.Program CFG
-  . explicateControl  -- :: R2.Program -> C1.Program ()
-  . rco -- :: R2.Program -> R2.Program
-  . uniquify -- :: R2.Program -> R2.Program
-  . shrink -- :: R2.Program -> R2.Program
+  . allocateRegisters
+  . buildInterference
+  . uncoverLive
+  . selectInstructions
+  . buildCFG
+  . explicateControl
+  . rco
+  . uniquify
+  . shrink
 
 {----- Shrink -----}
 
 shrink :: R2.Program -> R2.Program
-shrink (R2.Program e) = (R2.Program (shrinkExpr e))
+shrink (R2.Program e) = R2.Program (shrinkExpr e)
 
--- Subtract, and, or, <=, >, >=
 shrinkExpr :: R2.Expr -> R2.Expr
 shrinkExpr (R2.Num x) = R2.Num x
-shrinkExpr (R2.Read) = R2.Read
-shrinkExpr (R2.Neg e) = (R2.Neg (shrinkExpr e))
-shrinkExpr (R2.Add eL eR) = (R2.Add (shrinkExpr eL) (shrinkExpr eR))
-shrinkExpr (R2.Sub eL eR) = (R2.Add (shrinkExpr eL) (R2.Neg (shrinkExpr eR)))
+shrinkExpr R2.Read = R2.Read
+shrinkExpr (R2.Neg e) = R2.Neg (shrinkExpr e)
+shrinkExpr (R2.Add eL eR) = R2.Add (shrinkExpr eL) (shrinkExpr eR)
+shrinkExpr (R2.Sub eL eR) = R2.Add (shrinkExpr eL) (R2.Neg (shrinkExpr eR))
 shrinkExpr (R2.Var s) = R2.Var s
-shrinkExpr (R2.Let s eB e) = (R2.Let s (shrinkExpr eB) (shrinkExpr e))
+shrinkExpr (R2.Let s eB e) = R2.Let s (shrinkExpr eB) (shrinkExpr e)
 shrinkExpr R2.T = R2.T
 shrinkExpr R2.F = R2.F
-shrinkExpr (R2.And eL eR) = (R2.If (shrinkExpr eL) (shrinkExpr eR) R2.F)
-shrinkExpr (R2.Or eL eR) = (R2.If (shrinkExpr eL) R2.T (shrinkExpr eR))
-shrinkExpr (R2.Not e) = (R2.Not (shrinkExpr e))
+shrinkExpr (R2.And eL eR) = R2.If (shrinkExpr eL) (shrinkExpr eR) R2.F
+shrinkExpr (R2.Or eL eR) = R2.If (shrinkExpr eL) R2.T (shrinkExpr eR)
+shrinkExpr (R2.Not e) = R2.Not (shrinkExpr e)
 shrinkExpr (R2.Cmp R2.Eq eL eR) =
-  (R2.Cmp R2.Eq (shrinkExpr eL) (shrinkExpr eR))
+  R2.Cmp R2.Eq (shrinkExpr eL) (shrinkExpr eR)
 shrinkExpr (R2.Cmp R2.Lt eL eR) =
-  (R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR))
+  R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR)
 shrinkExpr (R2.Cmp R2.Le eL eR) =
-  (R2.Not (R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL)))
+  R2.Not (R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL))
 shrinkExpr (R2.Cmp R2.Gt eL eR) =
-  (R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL))
+  R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL)
 shrinkExpr (R2.Cmp R2.Ge eL eR) =
-  (R2.Not (R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR)))
+  R2.Not (R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR))
 shrinkExpr (R2.If cond eT eF) =
-  (R2.If (shrinkExpr cond) (shrinkExpr eT) (shrinkExpr eF))
+  R2.If (shrinkExpr cond) (shrinkExpr eT) (shrinkExpr eF)
 
 {----- Uniquify -----}
 
@@ -75,7 +74,7 @@ uniquify (R2.Program e) = R2.Program $
 
 uniquifyExpr :: SymbolTable -> R2.Expr -> FreshEnv R2.Expr
 uniquifyExpr _ (R2.Num x) = return $ R2.Num x
-uniquifyExpr _ R2.Read = return $ R2.Read
+uniquifyExpr _ R2.Read =return R2.Read
 uniquifyExpr st (R2.Neg e) = R2.Neg <$> uniquifyExpr st e
 uniquifyExpr st (R2.Add eL eR) =
   return R2.Add `ap` uniquifyExpr st eL `ap` uniquifyExpr st eR
@@ -90,8 +89,8 @@ uniquifyExpr st (R2.Let name be e) = do
   be' <- uniquifyExpr st be
   e' <- uniquifyExpr st' e
   return (R2.Let name' be' e')
-uniquifyExpr _ R2.T = return $ R2.T
-uniquifyExpr _ R2.F = return $ R2.F
+uniquifyExpr _ R2.T =return R2.T
+uniquifyExpr _ R2.F =return R2.F
 uniquifyExpr _ (R2.And _ _) = error "Found And in uniquify step"
 uniquifyExpr _ (R2.Or _ _) = error "Found Or in uniquify step"
 uniquifyExpr st (R2.Not e) = R2.Not <$> uniquifyExpr st e
@@ -145,8 +144,7 @@ rcoExpr (R2.If cond eT eF) = do
   cond' <- rcoExpr cond
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
-  return $ (R2.If cond' eT' eF')
-
+  return (R2.If cond' eT' eF')
 
 rcoArg :: R2.Expr -> FreshEnv ([(String, R2.Expr)], R2.Expr)
 rcoArg (R2.Num x) = return ([], R2.Num x)
@@ -164,7 +162,7 @@ rcoArg (R2.Add eL eR) = do
   n <- fresh
   return (bindingsL ++ bindingsR ++ [(n, R2.Add eL' eR')]
          , R2.Var n)
-rcoArg (R2.Sub _ _) = error $ "Found Sub in RCO step"
+rcoArg (R2.Sub _ _) =error "Found Sub in RCO step"
 rcoArg (R2.Var name) = return ([], R2.Var name)
 rcoArg (R2.Let n be e) = do
   (bindingsBE, be') <- rcoArg be
@@ -172,8 +170,8 @@ rcoArg (R2.Let n be e) = do
   return (bindingsBE ++ [(n, be')] ++ bindings, e')
 rcoArg R2.T = return ([], R2.T)
 rcoArg R2.F = return ([], R2.F)
-rcoArg (R2.And _ _) = error $ "Found And in RCO step"
-rcoArg (R2.Or _ _) = error $ "Found Or in RCO step"
+rcoArg (R2.And _ _) =error "Found And in RCO step"
+rcoArg (R2.Or _ _) =error "Found Or in RCO step"
 rcoArg (R2.Not e) = do
   (bindings, e') <- rcoArg e
   n <- fresh
@@ -183,15 +181,15 @@ rcoArg (R2.Cmp cmp eL eR)
       (bindingsL, eL') <- rcoArg eL
       (bindingsR, eR') <- rcoArg eR
       n <- fresh
-      return $ ( bindingsL ++ bindingsR ++ [(n, R2.Cmp cmp eL' eR')]
-               , R2.Var n)
+      return (bindingsL ++ bindingsR ++ [(n, R2.Cmp cmp eL' eR')]
+             , R2.Var n)
   | otherwise = error $ "Found " ++ show cmp ++ "in RCO step."
 rcoArg (R2.If cond eT eF) = do
   cond' <- rcoExpr cond
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
   n <- fresh
-  return $ ([(n, R2.If cond' eT' eF')], R2.Var n)
+  return ([(n, R2.If cond' eT' eF')], R2.Var n)
 
 makeBindings :: [(String, R2.Expr)] -> R2.Expr -> R2.Expr
 makeBindings ((b, be):bs) e =
@@ -214,22 +212,29 @@ ecTail (R2.If eCmp eT eF ) = do
   eF' <- ecTail eF
   ecPred eCmp eT' eF'
 ecTail (R2.Num x) = return $ C1.Return (C1.Plain (C1.Num x))
-ecTail (R2.Read) = error $ "ecTail: Found read in tail position"
+ecTail R2.Read =
+  error "ecTail: Found read in tail position"
 ecTail (R2.Neg e) = return $ C1.Return (C1.Neg (ecArg e))
 ecTail (R2.Add eL eR) = return $ C1.Return (C1.Plus (ecArg eL) (ecArg eR))
-ecTail (R2.Var s) = return $ (C1.Return (C1.Plain (C1.Var s)))
-ecTail R2.T = return $ C1.Return (C1.Plain (C1.T))
-ecTail R2.F = return $ C1.Return (C1.Plain (C1.F))
-ecTail (R2.And _ _) = error $ "ecTail: Found And"
-ecTail (R2.Or _ _) = error $ "ecTail: Found Or"
-ecTail (R2.Sub _ _) = error $ "ecTail: Found Sub"
+ecTail (R2.Var s) =
+  return (C1.Return (C1.Plain (C1.Var s)))
+ecTail R2.T = return $ C1.Return (C1.Plain C1.T)
+ecTail R2.F = return $ C1.Return (C1.Plain C1.F)
+ecTail (R2.And _ _) =
+  error "ecTail: Found And"
+ecTail (R2.Or _ _) =
+  error "ecTail: Found Or"
+ecTail (R2.Sub _ _) =
+  error "ecTail: Found Sub"
 ecTail (R2.Not e) = return $ C1.Return (C1.Not (ecArg e))
 ecTail (R2.Cmp cmp eL eR) =
   return $ C1.Return (C1.Cmp (ecCmp cmp) (ecArg eL) (ecArg eR))
 
 ecPred :: R2.Expr -> C1.Tail -> C1.Tail -> State EcS C1.Tail
-ecPred (R2.T) t1 _ = return $ t1
-ecPred (R2.F) _ t2 = return $ t2
+ecPred R2.T t1 _ =
+  return t1
+ecPred R2.F _ t2 =
+  return t2
 ecPred (R2.Not e) t1 t2 = do
   l1 <- newBlock t1
   l2 <- newBlock t2
@@ -244,7 +249,6 @@ ecPred (R2.Cmp cmp eL eR) t1 t2 = do
   l1 <- newBlock t1
   l2 <- newBlock t2
   return $ C1.If (ecCmp cmp) (ecArg eL) (ecArg eR) l1 l2
--- Unsure about this - IJW
 ecPred (R2.Let s eB e) t1 t2 = do
   e' <- ecPred e t1 t2
   ecAssign eB s e'
@@ -252,23 +256,24 @@ ecPred (R2.Let s eB e) t1 t2 = do
 ecPred e _ _ = error $ "ecPred: " ++ show e
 
 ecAssign :: R2.Expr -> String -> C1.Tail -> State EcS C1.Tail
-ecAssign R2.Read s t = return $ (C1.Seq (C1.Assign s C1.Read) t)
+ecAssign R2.Read s t =
+  return $ C1.Seq (C1.Assign s C1.Read) t
 ecAssign (R2.Add eL eR) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Plus (ecArg eL) (ecArg eR))) t)
+  return $ C1.Seq (C1.Assign s (C1.Plus (ecArg eL) (ecArg eR))) t
 ecAssign (R2.Neg e) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Neg (ecArg e))) t)
+  return $ C1.Seq (C1.Assign s (C1.Neg (ecArg e))) t
 ecAssign (R2.Not e) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Not (ecArg e))) t)
+  return $ C1.Seq (C1.Assign s (C1.Not (ecArg e))) t
 ecAssign (R2.Cmp cmp eL eR) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Cmp (ecCmp cmp) (ecArg eL) (ecArg eR))) t)
+  return $ C1.Seq (C1.Assign s (C1.Cmp (ecCmp cmp) (ecArg eL) (ecArg eR))) t
 ecAssign e@(R2.Num _) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t)
+  return $ C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t
 ecAssign e@(R2.Var _) s t =
-  return $ (C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t)
+  return $ C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t
 ecAssign R2.T s t =
-  return $ (C1.Seq (C1.Assign s (C1.Plain (C1.T))) t)
+  return $ C1.Seq (C1.Assign s (C1.Plain C1.T)) t
 ecAssign R2.F s t =
-  return $ (C1.Seq (C1.Assign s (C1.Plain (C1.F))) t)
+  return $ C1.Seq (C1.Assign s (C1.Plain C1.F)) t
 ecAssign (R2.If cond eT eF) s t = do
   lbl <- newBlock t
   eT' <- ecAssign eT s (C1.Goto lbl)
@@ -279,8 +284,8 @@ ecAssign e _ _ = error $ "Called ecAssign on " ++ show e
 ecArg :: R2.Expr -> C1.Arg
 ecArg (R2.Num x) = C1.Num x
 ecArg (R2.Var x) = C1.Var x
-ecArg (R2.T) = C1.T
-ecArg (R2.F) = C1.F
+ecArg R2.T = C1.T
+ecArg R2.F = C1.F
 ecArg e = error $ "Called ecArg on " ++ show e
 
 ecCmp :: R2.Compare -> C1.Compare
@@ -296,7 +301,7 @@ runEcState e =
   let (startBlock, ecsState) = runState (ecTail e) (EcS M.empty 0)
   in (startBlock, ecsBlocks ecsState)
 
-newBlock :: C1.Tail -> State EcS (String)
+newBlock :: C1.Tail -> State EcS String
 newBlock t = do
   (EcS blocks x) <- get
   let lbl = "block"++show x
@@ -318,7 +323,7 @@ mkCFG ((s, b):bs) m = case b of
   C1.Seq _ t  -> mkCFG ((s, t):bs) m
   C1.Return _ ->
     let m' = M.insert s S.empty m
-    in mkCFG bs m' -- Should have it add empty set -- IJW
+    in mkCFG bs m'
   C1.Goto b'   ->
     let m' = M.insert s (S.singleton b') m
     in mkCFG bs m'
@@ -331,13 +336,9 @@ mkCFG [] m = m
 {----- Select Instructions -----}
 
 selectInstructions :: C1.Program CFG -> X1.Program CFG
-selectInstructions (C1.Pgrm cfg bs) =
-  (X1.Program cfg
-    bs')
+selectInstructions (C1.Pgrm cfg bs) = X1.Program cfg bs'
  where
-  bs' = map (\(l, b) -> (l, mkBlock . siTail $ b)) bs
-  mkBlock is = X1.Block is
-
+  bs' = map (\(l, b) -> (l, X1.Block . siTail $ b)) bs
 
 siTail :: C1.Tail -> [X1.Instr]
 siTail (C1.Return (C1.Plain a))    =
@@ -404,21 +405,19 @@ siStmt (C1.Assign s (C1.Cmp cmp aL aR)) =
 siArg :: C1.Arg -> X1.Arg
 siArg (C1.Num x) = X1.Num x
 siArg (C1.Var s) = X1.Var s
-siArg (C1.T) = X1.Num 1
-siArg (C1.F) = X1.Num 0
+siArg C1.T = X1.Num 1
+siArg C1.F = X1.Num 0
 
 siCompare :: C1.Compare -> X1.CC
-siCompare (C1.Eq) = X1.CCEq
-siCompare (C1.Lt) = X1.CCL
+siCompare C1.Eq = X1.CCEq
+siCompare C1.Lt = X1.CCL
 
 {----- Uncover Live -----}
 
 type LiveSets = [Set X1.Arg]
 
 uncoverLive :: X1.Program CFG -> X1.Program LiveSets
-uncoverLive (X1.Program cfg bs) =
-  X1.Program liveSets bs
-
+uncoverLive (X1.Program cfg bs) = X1.Program liveSets bs
  where
    liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveSets') bs
      where liveSets' = ulBlocks2 bs cfg trav M.empty
@@ -448,9 +447,10 @@ ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
             foldr S.union S.empty
             . head
             . map (\s' ->
-                     (fromMaybe
-                        (error $ "ulBlocks: Failed to find " ++ show s' ++
-                         " in liveAfterSets map") $ M.lookup s' m))
+                     fromMaybe
+                       (error $ "ulBlocks: Failed to find " ++ show s' ++
+                        " in liveAfterSets map")
+                       (M.lookup s' m))
             . S.toList
             $ succs
           (X1.Block is) = fromJust $ lookup s bs
@@ -462,10 +462,10 @@ mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
 mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
 
 mkSets :: S.Set X1.Arg -> [X1.Instr] -> [S.Set X1.Arg]
-mkSets set (i:is) = set : (mkSets set' is)
+mkSets set (i:is) = set : mkSets set' is
  where
    set' =
-     S.filter (X1.isVar) $ (set S.\\ w i) `S.union` r i
+     S.filter X1.isVar $ (set S.\\ w i) `S.union` r i
 
    w instr =
      case X1.writeArgs instr of
@@ -490,18 +490,14 @@ buildInterference (X1.Program liveSets bs) =
  where
    iGraph = buildInterfere sets insts
    sets = liveSets
-   insts = concatMap (\(_, (X1.Block is)) -> is) bs
+   insts = concatMap (\(_, X1.Block is) -> is) bs
 
-buildInterfere
-  :: [S.Set X1.Arg]
-  -> [X1.Instr]
-  -> Map X1.Arg (Set X1.Arg)
+buildInterfere :: [S.Set X1.Arg] -> [X1.Instr] -> Map X1.Arg (Set X1.Arg)
 buildInterfere s i = execState (buildInterfere' s i) M.empty
 
-buildInterfere'
-  :: [S.Set X1.Arg]
-  -> [X1.Instr]
-  -> State (Map X1.Arg (S.Set X1.Arg)) ()
+buildInterfere' :: [S.Set X1.Arg]
+                -> [X1.Instr]
+                -> State (Map X1.Arg (S.Set X1.Arg)) ()
 buildInterfere' (la:las) (i:is) =
   case i of
     (X1.Addq _ s@(X1.Var _)) -> do
@@ -535,18 +531,17 @@ buildInterfere' (la:las) (i:is) =
     :: X1.Arg
     -> S.Set X1.Arg -> State (M.Map X1.Arg (S.Set X1.Arg)) ()
   addEdges s la' = do
-    modify $ M.insertWith (S.union) s la'
+    modify $ M.insertWith S.union s la'
     mapM_ (addEdge s) la'
-    return ()
 
   addEdge :: X1.Arg -> X1.Arg -> State (M.Map X1.Arg (S.Set X1.Arg)) ()
   addEdge a1 a2 = do
-    modify $ M.insertWith (S.union) a2 (S.singleton a1)
+    modify $ M.insertWith S.union a2 (S.singleton a1)
     return ()
 
   addRegisters la' = do
     let rs = S.map X1.Reg (S.fromList callerSaved)
-    mapM_ (\s -> addEdges s rs) la'
+    mapM_ (`addEdges` rs) la'
 
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
@@ -556,80 +551,52 @@ buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live afte
 type LocMap = Map String X1.StoreLoc
 
 allocateRegisters :: X1.Program IGraph -> X1.Program LocMap
-allocateRegisters (X1.Program iGraph bs) =
-  (X1.Program locMap bs)
+allocateRegisters (X1.Program iGraph bs) = X1.Program locMap bs
  where
-   locMap = colorGraph (iGraph) (M.empty)
+  locMap = colorGraph iGraph
 
--- Returns list of Strings to X1.StoreLocs and frameSize
-colorGraph
-  :: (Map X1.Arg (Set X1.Arg))
-  -> (Map X1.Arg (Set X1.Arg))
-  -> (Map String X1.StoreLoc)
-colorGraph iList mvBList  =
-  let
-    (g', nodeFromVertex, vertexFromNode) = toGraph iList
+colorGraph :: Map X1.Arg (Set X1.Arg)
+           -> Map String X1.StoreLoc
+colorGraph iList =
+  M.fromList
+  . mapMaybe
+      (\(v, c) -> case lookup v vertexAssoc of
+          Just (X1.Reg _) -> Nothing
+          Just (X1.Var s) -> Just (s, storeLocFromColor c)
+          Nothing         -> Nothing
+          _               -> error $ "Found " ++ show v ++ "in vertexAssoc")
+  . M.toList
+  $ coloring
+ where
+  coloring :: M.Map Vertex Color
+  coloring = color g M.empty needColors alreadyColored
 
-    vertexAssoc =
-      map (\v -> let (_, a, _) = nodeFromVertex v in (v, a))
-      . vertices
-      $ g'
+  needColors :: S.Set Vertex
+  needColors = S.fromList . map fst $ varVerts
 
-    regVerts :: [(Vertex, X1.Arg)]
-    regVerts = filter (\(_, a) -> X1.isReg a) vertexAssoc
-
-    varVerts = (vertexAssoc \\ regVerts)
-
-    needColors :: S.Set Vertex
-    needColors = S.fromList . map fst $ varVerts
-
-    alreadyColored :: (M.Map Vertex Color)
-    alreadyColored =
-      M.fromList
-      . mapMaybe
-          (\(v, a) -> case a of
-              (X1.Reg r) -> case colorFromReg r of
-                Nothing -> Nothing
-                Just n  -> Just (v, n)
-              _ -> error $ "colorGraph: Don't expect " ++ show a ++
-                   " in the regVerts list.")
-      $ regVerts
-
-    preferMap' :: (M.Map Vertex (Set Vertex))
-    preferMap' =
-      M.fromList
-      . map
-          (\(var1, vs) -> case vertexFromNode var1 of
-              Nothing ->
-                error $ "Could not find " ++ show var1 ++ " in graph"
-              Just v ->
-                let
-                  vs' = S.map (fromJust . vertexFromNode) vs :: Set Vertex
-                in (v, vs'))
-      . M.toList
-      $ mvBList
-
-    coloring :: M.Map Vertex Color
-    coloring = color g' preferMap' needColors alreadyColored
-  in
+  alreadyColored :: (M.Map Vertex Color)
+  alreadyColored =
     M.fromList
     . mapMaybe
-        (\(v, c) -> case lookup v vertexAssoc of
-            Just (X1.Reg _) -> Nothing
-            Just (X1.Var s) -> Just (s, storeLocFromColor c)
-            Nothing         -> Nothing
-            _               -> error $ "Found " ++ show v ++ "in vertexAssoc")
-    . M.toList
-    $ coloring
+        (\(v, a) -> case a of
+            (X1.Reg r) -> case colorFromReg r of
+              Nothing -> Nothing
+              Just n  -> Just (v, n)
+            _ -> error $ "colorGraph: Don't expect " ++ show a ++
+                 " in the regVerts list.")
+    $ regVerts
 
-toGraph
-  :: M.Map X1.Arg (S.Set X1.Arg)
-  -> (Graph, Vertex -> ((), X1.Arg, [X1.Arg]), X1.Arg -> Maybe Vertex)
-toGraph conflicts = graphFromEdges .
-  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
+  varVerts = vertexAssoc \\ regVerts
+
+  regVerts :: [(Vertex, X1.Arg)]
+  regVerts = filter (\(_, a) -> X1.isReg a) vertexAssoc
+
+  vertexAssoc = M.toList vertexMap
+
+  (g, vertexMap, _) = mapSetToGraph iList
 
 regsToUse :: [Register]
-regsToUse = tail $ callerSaved
+regsToUse = take 3 . tail $ callerSaved
 
 regIntAssoc :: [(Int, Register)]
 regIntAssoc = zip [0..] regsToUse
@@ -637,7 +604,7 @@ regIntAssoc = zip [0..] regsToUse
 storeLocFromColor :: Int -> X1.StoreLoc
 storeLocFromColor n = case lookup n regIntAssoc of
   Just r -> X1.RegLoc r
-  Nothing -> X1.Stack $ negate $ 8 * (n - (length regIntAssoc))
+  Nothing -> X1.Stack $ negate $ 8 * n - length regIntAssoc
 
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
@@ -646,11 +613,8 @@ colorFromReg r = lookup r (map swap regIntAssoc)
 
 type FrameSize = Int
 
-assignHomes
-  :: X1.Program (LocMap)
-  -> X1.Program (FrameSize)
-assignHomes (X1.Program locMap bs) =
-  X1.Program (frameSize locMap) bs'
+assignHomes :: X1.Program LocMap -> X1.Program FrameSize
+assignHomes (X1.Program locMap bs) = X1.Program (frameSize locMap) bs'
  where
   bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
 
@@ -701,9 +665,8 @@ frameSize locMap =
 
 {----- Patch Instructions -----}
 
-patchInstructions :: X1.Program (FrameSize) -> X1.Program ()
+patchInstructions :: X1.Program FrameSize -> X1.Program ()
 patchInstructions (X1.Program fSize bs) = X1.Program () bs'
-
  where
   bs' = intro fSize : conclusion fSize : map (\(l, b) -> (l, pBlock b)) bs
 
@@ -759,17 +722,5 @@ pInstrs (X1.Movzbq l d@(X1.Deref _ _)) =
   [ X1.Movzbq l (X1.Reg Rax)
   , X1.Movq (X1.Reg Rax) d ]
 
-pInstrs i@(X1.Movq a1 a2) = [i | not $ a1 == a2]
+pInstrs i@(X1.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]
-
-{- End -}
-
---testProg = "(if (if (cmp eq? (read) 1) (cmp eq? (read) 0) (cmp eq? (read) 2)) (+ 10 32) (+ 700 77))"
-
-
-testProg = "(let ([x (read)]) (if (cmp >= 5 3) #t #f))"
-
---ch4Test = putStrLn (show $ rco testProg)
-
-compileTest =
-  compileToFile R2.parse compile testProg "./test/ch4test"

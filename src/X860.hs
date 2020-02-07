@@ -46,6 +46,6 @@ instance PrettyPrint Program where
      printBlock (label, block) =
        label ++ ":\n" ++ prettyPrint block
 
-data PInfo = PInfo { frameSize :: Int }
+newtype PInfo = PInfo { frameSize :: Int }
 
 data BInfo = BInfo
