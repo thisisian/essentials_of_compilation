@@ -77,7 +77,7 @@ parse = Parsec.parse pProgram ""
 parseError :: String -> Program
 parseError s = case Parsec.parse pProgram "" s of
   Left e -> error $ show e
-  Right s -> s
+  Right s' -> s'
 
 pProgram = Program Info <$> pExpr
 

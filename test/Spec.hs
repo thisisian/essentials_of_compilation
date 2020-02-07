@@ -25,7 +25,7 @@ main = defaultMain
   --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
   [ch4Tests]
 
-{----- Chapter 1 Tests -----}
+{----- Chapter 1 -----}
 
 exercise1Test :: String -> String -> TestTree
 exercise1Test input expected = testCase "Exercise 1" $
@@ -74,98 +74,56 @@ ch1Tests = testGroup "Chapter 1" $
 
 {----- Chapter 2 -----}
 
-ch2CompileTest :: String -> TestTree
-ch2CompileTest =
-  compileTest R1.parse dummyTypeChecker R1.interp Ch2.compile
+--ch2CompileTest :: String -> TestTree
+--ch2CompileTest =
+--  compileTest R1.parse dummyTypeChecker R1.interp Ch2.compile
+--
+--ch2Tests = testGroup "Chapter 1" $
+--  map (interpTest R1.parse dummyTypeChecker R1.interp
+--  [ interpTest R1.parse dummyTypeChecker R1.interp testExpr10 [] 42
+--  , interpTest R1.parse dummyTypeChecker R1.interp testExpr11 [] 42
+--  , interpTest R1.parse dummyTypeChecker R1.interp testExpr12 [] 42
+--  , interpTest R1.parse dummyTypeChecker R1.interp testExpr13 [52, 10] 42
+--  ] ++
+--  map ch2CompileTest ch2TestExprs
 
-ch2Tests = testGroup "Chapter 1" $
-  [ interpTest R1.parse dummyTypeChecker R1.interp testExpr10 [] 42
-  , interpTest R1.parse dummyTypeChecker R1.interp testExpr11 [] 42
-  , interpTest R1.parse dummyTypeChecker R1.interp testExpr12 [] 42
-  , interpTest R1.parse dummyTypeChecker R1.interp testExpr13 [52, 10] 42
-  , ch2CompileTest testExpr1
-  , ch2CompileTest testExpr2
-  , ch2CompileTest testExpr3
-  , ch2CompileTest testExpr4
-  , ch2CompileTest testExpr5
-  , ch2CompileTest testExpr6
-  , ch2CompileTest testExpr7
-  , ch2CompileTest testExpr8
-  , ch2CompileTest testExpr9
-  , ch2CompileTest testExpr10
-  , ch2CompileTest testExpr11
-  , ch2CompileTest testExpr12
-  , ch2CompileTest testExpr13
-  , ch2CompileTest testExpr14
-  , ch2CompileTest testExpr15
-  , ch2CompileTest testExpr16
-  , ch2CompileTest testExpr17
-  , ch2CompileTest testExpr18
-  , ch2CompileTest testExpr19
-  , ch2CompileTest testExpr20
-  , ch2CompileTest testExpr21
-  , ch2CompileTest testExpr22
-  , ch2CompileTest testExpr23
-  , ch2CompileTest testExpr24
-  , ch2CompileTest testExpr25
-  ]
+{----- Chapter 3 -----}
 
 ch3CompileTest :: String -> TestTree
 ch3CompileTest =
   compileTest R1.parse dummyTypeChecker R1.interp Ch3.compile
 
-ch3Tests = testGroup "Chapter 2" $
-  [ ch3CompileTest testExpr1
-  , ch3CompileTest testExpr2
-  , ch3CompileTest testExpr3
-  , ch3CompileTest testExpr4
-  , ch3CompileTest testExpr5
-  , ch3CompileTest testExpr6
-  , ch3CompileTest testExpr7
-  , ch3CompileTest testExpr8
-  , ch3CompileTest testExpr9
-  , ch3CompileTest testExpr10
-  , ch3CompileTest testExpr11
-  , ch3CompileTest testExpr12
-  , ch3CompileTest testExpr13
-  , ch3CompileTest testExpr14
-  , ch3CompileTest testExpr15
-  , ch3CompileTest testExpr16
-  , ch3CompileTest testExpr17
-  , ch3CompileTest testExpr18
-  , ch3CompileTest testExpr19
-  , ch3CompileTest testExpr20
-  , ch3CompileTest testExpr21
-  , ch3CompileTest testExpr22
-  , ch3CompileTest testExpr23
-  , ch3CompileTest testExpr24
+ch3Tests = testGroup "Chapter 2" $ map (ch3CompileTest) ch3TestExprs
+
+ch3TestExprs :: [String]
+ch3TestExprs =
+  [ "(+ 8 2)"
+  , "(+ (read) 2)"
+  , "(+ (read) (read))"
+  , "(read)"
+  , "(let ([x (let ([x 5]) x)]) x)"
+  , "(+ (+ (read) (- 4)) (read))"
+  , "(+ (+ (+ (read) (- 9)) (- 4)) (- 2))"
+  , "(let ([x (+ 12 20)]) (+ 10 x))"
+  , "(let ([x 32]) (+ (let ([x 10]) x) x))"
+  , "(let ([x (+ 12 20)]) (+ 10 x))"
+  , "(let ([x 32]) (+ (let ([x 10]) x) x))"
+  , "(let ([x1 32]) (+ (let ([x2 10]) x2) x1))"
+  , "(let ([x (read)]) (let ([y (read)]) (+ x (- y))))"
+  , "(let ([x 32]) (+ (let ([x 10]) x) x))"
+  , "(let ([ x (let ([ x (read)]) (+ x (read))) ]) (+ (let ([ x 15 ]) (+ (- x) 100)) (+ x 105)))"
+  , "(+ (let ([ x (read)]) (+ x  (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))))) (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))"
+  , "(+ (let ([y (read)]) y) (let ([y (read)]) y))"
+  , "(let ([x (read)]) (+ (let ([y (read)]) (+ x (- y))) x))"
+  , "(+ (let ([ x 1 ]) (+ x 2)) 3)"
+  , "(let ([x (read)]) (+ (let ([y (read)]) (+ x y)) (let ([y (read)]) (+ y x))))"
+  , "3"
+  , "(- (let ([x (+ 2 3)]) (- (+ x x))))"
+  , "(- (read))"
+  , "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
+  , "(let ([x 5]) x)"
   ]
 
-testExpr1 = "(+ 8 2)"
-testExpr2 = "(+ (read) 2)"
-testExpr3 = "(+ (read) (read))"
-testExpr4 = "(read)"
-testExpr5 = "(let ([x (let ([x 5]) x)]) x)"
-testExpr6 = "(+ (+ (read) (- 4)) (read))"
-testExpr7 = "(+ (+ (+ (read) (- 9)) (- 4)) (- 2))"
-testExpr8 = "(let ([x (+ 12 20)]) (+ 10 x))"
-testExpr9 = "(let ([x 32]) (+ (let ([x 10]) x) x))"
-testExpr10 = "(let ([x (+ 12 20)]) (+ 10 x))"
-testExpr11 = "(let ([x 32]) (+ (let ([x 10]) x) x))"
-testExpr12 = "(let ([x1 32]) (+ (let ([x2 10]) x2) x1))"
-testExpr13 = "(let ([x (read)]) (let ([y (read)]) (+ x (- y))))"
-testExpr14 = "(let ([x 32]) (+ (let ([x 10]) x) x))"
-testExpr15 = "(let ([ x (let ([ x (read)]) (+ x (read))) ]) (+ (let ([ x 15 ]) (+ (- x) 100)) (+ x 105)))"
-testExpr16 = "(+ (let ([ x (read)]) (+ x  (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))))) (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (let ([ x (read)]) (+ x (read))))))))))))))))))))"
-testExpr17 =  "(+ (let ([y (read)]) y) (let ([y (read)]) y))"
-testExpr18 = "(let ([x (read)]) (+ (let ([y (read)]) (+ x (- y))) x))"
-testExpr19 = "(+ (let ([ x 1 ]) (+ x 2)) 3)"
-testExpr20 =  "(let ([x (read)]) (+ (let ([y (read)]) (+ x y)) (let ([y (read)]) (+ y x))))"
-testExpr21 = "3"
-testExpr22 = "(- (let ([x (+ 2 3)]) (- (+ x x))))"
-testExpr23 = "(- (read))"
-testExpr24 = "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
-testExpr25 = "(let ([x 5]) x)"
 
 {----- Chapter 4 Tests -----}
 
@@ -184,72 +142,48 @@ ch4StepTest =
 
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
-  [-- parseTest R2.parse testExpr22
-  --, parseTest R2.parse testExpr26
-  --, parseTest R2.parse testExpr27
-  --, parseTest R2.parse testExpr28
-  --, parseTest R2.parse testExpr29
-  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  --, ch4TypeCheckFail "(cmp <= #t 3)"
-  --, ch4TypeCheckFail "(let ([x 2]) y)"
-  --, ch4TypeCheckFail "(- #t)"
-  --, ch4TypeCheckFail "(+ #t 2)"
-  --, ch4TypeCheckFail "(or 2 #f)"
-  --, ch4TypeCheck testExpr26 R2.TBool
-  --, ch4TypeCheck testExpr27 R2.TBool
-  --, ch4TypeCheck testExpr29 R2.TBool
-  --, ch4TypeCheck testExpr30 R2.TBool
-  --, ch4TypeCheck testExpr31 R2.TBool
-  --, ch4InterpTest testExpr26 [] 1
-  --, ch4InterpTest testExpr27 [] 0
-  --, ch4InterpTest testExpr28 [] 1
-  --, ch4InterpTest testExpr29 [] 0
-  --, ch4InterpTest testExpr30 [5] 1
-  --, ch4InterpTest testExpr31 [2,3] 0
-  --, ch4InterpTest testExpr32 [50] (-50)
-  --, ch4InterpTest testExpr33 [] 10
-  --, ch4StepTest testExpr26
-  --, ch4StepTest testExpr27
-  --, ch4StepTest testExpr28
-  --, ch4StepTest testExpr29
-  --, ch4StepTest testExpr30
-  --, ch4StepTest testExpr31
- -- , ch4CompileTest testExpr1
- -- , ch4CompileTest testExpr2
- -- , ch4CompileTest testExpr3
- -- , ch4CompileTest testExpr4
- -- , ch4CompileTest testExpr5
- -- , ch4CompileTest testExpr6
- -- , ch4CompileTest testExpr7
- -- , ch4CompileTest testExpr8
- -- , ch4CompileTest testExpr9
- -- , ch4CompileTest testExpr10
- -- , ch4CompileTest testExpr11
- -- , ch4CompileTest testExpr12
- -- , ch4CompileTest testExpr13
- -- , ch4CompileTest testExpr14
- -- , ch4CompileTest testExpr15
- -- , ch4CompileTest testExpr16
- -- , ch4CompileTest testExpr17
- -- , ch4CompileTest testExpr18
- -- , ch4CompileTest testExpr19
- -- , ch4CompileTest testExpr20
- -- , ch4CompileTest testExpr21
- -- , ch4CompileTest testExpr22
- -- , ch4CompileTest testExpr23
- -- , ch4CompileTest testExpr24
- -- , ch4CompileTest testExpr25
- -- , ch4CompileTest testExpr26
- --, ch4CompileTest testExpr27
- -- ch4CompileTest testExpr28
-   ch4CompileTest testExpr29
+  [ parseTest R2.parse testExpr26
+  , parseTest R2.parse testExpr27
+  , parseTest R2.parse testExpr28
+  , parseTest R2.parse testExpr29
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(cmp <= #t 3)"
+  , ch4TypeCheckFail "(let ([x 2]) y)"
+  , ch4TypeCheckFail "(- #t)"
+  , ch4TypeCheckFail "(+ #t 2)"
+  , ch4TypeCheckFail "(or 2 #f)"
+  , ch4TypeCheck testExpr26 R2.TBool
+  , ch4TypeCheck testExpr27 R2.TBool
+  , ch4TypeCheck testExpr29 R2.TBool
+  , ch4TypeCheck testExpr30 R2.TBool
+  , ch4TypeCheck testExpr31 R2.TBool
+  , ch4InterpTest testExpr27 [] 0
+  , ch4InterpTest testExpr28 [] 1
+  , ch4InterpTest testExpr29 [] 0
+  , ch4InterpTest testExpr30 [5] 1
+  , ch4InterpTest testExpr31 [2,3] 0
+  , ch4InterpTest testExpr32 [50] (-50)
+  , ch4InterpTest testExpr33 [] 10
+  , ch4StepTest testExpr26
+  , ch4StepTest testExpr27
+  , ch4StepTest testExpr28
+  , ch4StepTest testExpr29
+  , ch4StepTest testExpr30
+  , ch4StepTest testExpr31 ] ++
+  map ch4CompileTest ch3TestExprs ++
+
+  [ ch4CompileTest testExpr26
+  , ch4CompileTest testExpr27
+  , ch4CompileTest testExpr28
+  , ch4CompileTest testExpr29
   , ch4CompileTest testExpr30
   , ch4CompileTest testExpr31
   , ch4CompileTest testExpr32
   , ch4CompileTest testExpr33
+  , ch4CompileTest testExpr34
   ]
 
 testExpr26 = "(cmp <= (+ 2 3) (- 9 3))"
@@ -262,6 +196,8 @@ testExpr30 = "(let ([x (read)]) (if (cmp <= x 3) (and #t #f) (or #t #f)))"
 testExpr31 = "(let ([x (read)]) (let ([y (read)]) (cmp >= x y)))"
 testExpr32 = "(- (let ([x (read)]) (if (and #t #t) (if (or #f #f) 90 (if (not #f) (if (cmp eq? x 100) 90 (if (cmp < x 100) x 90)) 90)) 90)))"
 testExpr33 = "(if (not (not (and #f #t))) 90 10)"
+testExpr34 = "(let ([x (read)]) (if (cmp <= x 3) #t #f))"
+testExpr35 = "(and #f #t)"
 
 {----- Generalized Tests -----}
 
@@ -360,8 +296,9 @@ compileAndRun :: Compiler a -> a -> [Int] -> IO (Int)
 compileAndRun c prog ins = do
   asm <- emptySystemTempFile "eocAsm.s"
   let bin = asm ++ ".out"
+  createEmptyFile bin
   result <- finally
-     (do writeFile asm (c prog)
+     (do (writeFile asm (c prog))
          (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
            ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
          case exitCode of
@@ -372,3 +309,5 @@ compileAndRun c prog ins = do
   case result of
     Left stdOut -> error $ stdOut
     Right x -> return x
+
+ where createEmptyFile f = writeFile f ""

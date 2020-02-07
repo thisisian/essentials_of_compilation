@@ -15,9 +15,6 @@ import Data.Set (Set)
 import Data.Tuple
 import qualified Data.Set as S
 
-import Safe
-import Debug.Trace
-
 import Common
 import Color
 
@@ -115,7 +112,9 @@ rco (R2.Program i e) = R2.Program i $ runFreshEnv "_rco" (rcoExpr e)
 
 rcoExpr :: R2.Expr -> FreshEnv R2.Expr
 rcoExpr (R2.Num x) = return $ R2.Num x
-rcoExpr R2.Read = return R2.Read
+rcoExpr e@R2.Read = do
+  (bindings, e') <- rcoArg e
+  return $ makeBindings bindings e'
 rcoExpr (R2.Neg e) = do
   (bindings, e') <- rcoArg e
   return $ makeBindings bindings (R2.Neg e')
@@ -177,7 +176,8 @@ rcoArg (R2.And _ _) = error $ "Found And in RCO step"
 rcoArg (R2.Or _ _) = error $ "Found Or in RCO step"
 rcoArg (R2.Not e) = do
   (bindings, e') <- rcoArg e
-  return (bindings, (R2.Not e'))
+  n <- fresh
+  return (bindings ++ [(n, R2.Not e')], R2.Var n)
 rcoArg (R2.Cmp cmp eL eR)
   | cmp == R2.Eq || cmp == R2.Lt = do
       (bindingsL, eL') <- rcoArg eL
@@ -190,7 +190,8 @@ rcoArg (R2.If cond eT eF) = do
   cond' <- rcoExpr cond
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
-  return $ ([], R2.If cond' eT' eF')
+  n <- fresh
+  return $ ([(n, R2.If cond' eT' eF')], R2.Var n)
 
 makeBindings :: [(String, R2.Expr)] -> R2.Expr -> R2.Expr
 makeBindings ((b, be):bs) e =
@@ -278,12 +279,15 @@ ecAssign e@(R2.Num _) s t =
   return $ (C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t)
 ecAssign e@(R2.Var _) s t =
   return $ (C1.Seq (C1.Assign s (C1.Plain (ecArg e))) t)
+ecAssign R2.T s t =
+  return $ (C1.Seq (C1.Assign s (C1.Plain (C1.T))) t)
+ecAssign R2.F s t =
+  return $ (C1.Seq (C1.Assign s (C1.Plain (C1.F))) t)
 ecAssign (R2.If cond eT eF) s t = do
   lbl <- newBlock t
   eT' <- ecAssign eT s (C1.Goto lbl)
   eF' <- ecAssign eF s (C1.Goto lbl)
   ecPred cond eT' eF'
-
 ecAssign e _ _ = error $ "Called ecAssign on " ++ show e
 
 ecArg :: R2.Expr -> C1.Arg
@@ -364,11 +368,13 @@ siTail (C1.Return (C1.Plus aL aR)) =
   , X1.Jmp "conclusion" ]
 siTail (C1.Return (C1.Not a)) =
   [ X1.Movq (siArg a) (X1.Reg Rax)
-  , X1.Xorq (X1.Num 1) (X1.Reg Rax) ]
+  , X1.Xorq (X1.Num 1) (X1.Reg Rax)
+  , X1.Jmp "conclusion" ]
 siTail (C1.Return (C1.Cmp cmp aL aR)) =
   [ X1.Cmpq (siArg aR) (siArg aL)
   , X1.Set (siCompare cmp) (X1.ByteReg Al)
-  , X1.Movzbq (X1.ByteReg Al) (X1.Reg Rax) ]
+  , X1.Movzbq (X1.ByteReg Al) (X1.Reg Rax)
+  , X1.Jmp "conclusion" ]
 siTail (C1.Seq assign t) = siStmt assign ++ siTail t
 siTail (C1.Goto s) = [X1.Jmp s]
 siTail (C1.If cmp aT aF gT gF) =
@@ -450,7 +456,7 @@ ulBlocks bs cfg (s:ss) m = case M.lookup s cfg of
     else
       let init' =
             foldr S.union S.empty
-            . headNote ("One")
+            . head
             . map (\s' ->
                      (fromMaybe
                         (error $ "ulBlocks: Failed to find " ++ show s' ++
@@ -506,7 +512,7 @@ mkSets _ [] = []
 --           buildInterfere (X1.bInfoLiveAfterSets i) is }
 
 buildInterference :: X1.Program -> X1.Program
-buildInterference (X1.Program info bs) = {- trace ("\ninfo: " ++ show info') -} X1.Program info' bs
+buildInterference (X1.Program info bs) = X1.Program info' bs
  where
    info' = info { X1.pInfoConflicts = buildInterfere sets insts }
    sets = concatMap (\(_, (X1.Block binfo _)) -> X1.bInfoLiveAfterSets binfo)
@@ -575,7 +581,7 @@ buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live afte
 {-- Allocate Registers --}
 
 allocateRegisters :: X1.Program -> X1.Program
-allocateRegisters p@(X1.Program info bs) = {- trace ("\npInfoConflicts: " ++ (show $ X1.pInfoConflicts info)) -} assignHomes locMap p
+allocateRegisters p@(X1.Program info _) = assignHomes locMap p
  where
    locMap =
          colorGraph
@@ -678,7 +684,7 @@ toGraph conflicts = graphFromEdges .
   map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ conflicts
 
 regsToUse :: [Register]
-regsToUse = [ Rbx ]
+regsToUse = tail $ callerSaved
 
 regIntAssoc :: [(Int, Register)]
 regIntAssoc = zip [0..] regsToUse
@@ -697,8 +703,7 @@ assignHomes
   :: M.Map String X1.StoreLoc
   -> X1.Program
   -> X1.Program
-assignHomes locMap (X1.Program info bs) = {- trace ("\nlocMap: " ++ show locMap) $ -}
-  X1.Program info' bs'
+assignHomes locMap (X1.Program info bs) = X1.Program info' bs'
  where
   info' = info { X1.pInfoFrameSize = frameSize locMap }
   bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
@@ -810,9 +815,9 @@ pInstrs (X1.Cmpq l@(X1.Deref _ _) r@(X1.Deref _ _)) =
 pInstrs (X1.Cmpq l r@(X1.Num _)) =
   [ X1.Movq r (X1.Reg Rax)
   , X1.Cmpq l (X1.Reg Rax) ]
-pInstrs (X1.Movzbq l (X1.Deref regR offR)) =
-  [ X1.Movq (X1.Deref regR offR) (X1.Reg Rax)
-  , X1.Movzbq l (X1.Reg Rax) ]
+pInstrs (X1.Movzbq l d@(X1.Deref _ _)) =
+  [ X1.Movzbq l (X1.Reg Rax)
+  , X1.Movq (X1.Reg Rax) d ]
 
 pInstrs i@(X1.Movq a1 a2) = [i | not $ a1 == a2]
 pInstrs i = [i]
@@ -822,7 +827,7 @@ pInstrs i = [i]
 --testProg = "(if (if (cmp eq? (read) 1) (cmp eq? (read) 0) (cmp eq? (read) 2)) (+ 10 32) (+ 700 77))"
 
 
-testProg = "(if (and #t #f) #f (cmp <= 2 3))"
+testProg = "(let ([x (read)]) (if (cmp >= 5 3) #t #f))"
 
 --ch4Test = putStrLn (show $ rco testProg)
 

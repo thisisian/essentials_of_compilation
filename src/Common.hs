@@ -5,20 +5,20 @@ module Common where
 import Control.Exception
 import Control.Monad.State
 import Control.Monad.Reader
-import Prelude
-import System.Process
-import qualified Filesystem.Path.CurrentOS as FP
-import System.Exit
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Map (Map)
 import Data.Graph
 import qualified Data.Map as M
 import Data.Tuple
+import qualified Filesystem.Path.CurrentOS as FP
 import GHC.IO.Handle
-import Debug.Trace
-
+import Prelude
+import System.Exit
+import System.Process
 import Text.Parsec.Error
+
+{-=--- Some Useful Types -----}
 
 type Parser a = (String -> Either ParseError a)
 
@@ -35,10 +35,11 @@ instance Show ParseException where
 
 instance Exception ParseException
 
-
 -- | Class for pretty printing x86
 class PrettyPrint a where
   prettyPrint :: a -> String
+
+{----- Some useful utility functions -----}
 
 compileToFile
   :: Parser a
@@ -51,7 +52,7 @@ compileToFile p c prog fp = do
     Left e -> throw (ParseException (show e))
     Right prog' -> do
       writeFile ass . c $ prog'
-      (exitCode, stdOut, stdErr) <- readProcessWithExitCode "gcc"
+      (exitCode, _, stdErr) <- readProcessWithExitCode "gcc"
           ["-g", "./test/testenv/runtime.o", ass, "-g", "-O0", "-o", fp] ""
       case exitCode of
         (ExitFailure _) -> error $ stdErr
@@ -59,7 +60,10 @@ compileToFile p c prog fp = do
  where
   ass = FP.encodeString $ FP.dropExtensions (FP.decodeString fp) FP.<.> "s"
 
-runBinary :: (Show a) => FilePath -> [a] -> IO Int
+runBinary :: (Show a)
+          => FilePath
+          -> [a]      -- input
+          -> IO Int
 runBinary fp ins = withCreateProcess process $
   \mbHIn _ _ ph -> case mbHIn of
     Just hIn -> do
@@ -88,18 +92,8 @@ exitCodeToInt :: ExitCode -> Int
 exitCodeToInt ExitSuccess   = 0
 exitCodeToInt (ExitFailure n) = n
 
---mapSetToGraph :: (Ord a)
---  => Map a (Set a)
---  -> (Graph, Vertex -> ((), a, [a]), a -> Maybe Vertex)
---mapSetToGraph m = graphFromEdges .
---  map (\(k, ks) -> ((), k, ks)) . M.toList . M.map (S.toList) $ m
-
-testMap =
-  M.fromList [(0, S.fromList ([1,2]) )
-             ,(1, S.fromList [0])
-             ,(2, S.empty)]
-
-mapSetToGraph :: (Ord a, Show a)
+-- | Generate a Data.Graph and maps to/from vertex from adjacency sets
+mapSetToGraph :: (Ord a)
   => Map a (Set a)
   -> (Graph, Map Vertex a, Map a Vertex)
 mapSetToGraph m = (graph, vertexMap, keyMap)
@@ -117,13 +111,14 @@ mapSetToGraph m = (graph, vertexMap, keyMap)
     . vertices
     $ graph
 
-
-  (graph, nodeFromVertex, vertexFromKey) =
+  (graph, nodeFromVertex, _) =
     graphFromEdges
     . map (\(k, ks) -> ((), k, ks))
     . M.toList
     . M.map (S.toList)
     $ m
+
+{---- A monad for generating unique variable names -----}
 
 type FreshM a = ReaderT String (State Int) a
 
@@ -140,14 +135,14 @@ fresh = do
 runFreshEnv :: String -> FreshEnv a -> a
 runFreshEnv prefix c = flip evalState 0 $ runReaderT (unFreshEnv c) prefix
 
-
-{----- Registers ------}
+{----- Registers -----}
 
 data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
               | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
               | Al
   deriving (Show, Ord, Eq)
 
+callerSaved :: [Register]
 callerSaved = [ Rax, Rdx, Rcx, Rsi, Rdi, R8, R9, R10, R11 ]
 
 instance PrettyPrint Register where

@@ -264,31 +264,3 @@ storeLocFromColor n = case lookup n regIntAssoc of
 
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
-
-ch3Test :: IO ()
-ch3Test =
-  let
-    uncover = uncoverLive exampleProgram
-    inter = buildInterference uncover
-    moveBias = buildMoveBias inter
-    alloc = allocateRegisters moveBias
-    patch = patchInstructions alloc
-  in putStrLn $ prettyPrint patch
-
-exampleProgram =
-  (PX.Program
-    (PX.PInfo {PX.pInfoLocals = ["v","w","x","y","z","t.1"]})
-    [("start",PX.Block PX.emptyBInfo
-  [PX.Movq (PX.Num 1) (PX.Var "v")        --
-  ,PX.Movq (PX.Num 46) (PX.Var "w")       --
-  ,PX.Movq (PX.Var "v") (PX.Var "x")      --
-  ,PX.Addq (PX.Num 7) (PX.Var "x")        --
-  ,PX.Movq (PX.Var "x") (PX.Var "y")      --
-  ,PX.Addq (PX.Num 4) (PX.Var "y")        --
-  ,PX.Movq (PX.Var "x") (PX.Var "z")      --
-  ,PX.Addq (PX.Var "w") (PX.Var "z")      --
-  ,PX.Movq (PX.Var "y") (PX.Var "t.1")    --
-  ,PX.Negq (PX.Var "t.1")                 --
-  ,PX.Movq (PX.Var "z") (PX.Reg Rax)   --
-  ,PX.Addq (PX.Var "t.1") (PX.Reg Rax) --
-  ,PX.Jmp "conclusion"])])                --

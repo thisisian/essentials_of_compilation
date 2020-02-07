@@ -144,3 +144,4 @@ readArgs (Callq _)    = Nothing
 readArgs (Jmp _)      = Nothing
 readArgs (JmpIf _ _)  = Nothing
 readArgs (Label _)    = Nothing
+readArgs (Retq)       = Nothing
