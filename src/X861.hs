@@ -1,38 +1,14 @@
 module X861 where
 
 import Common
-import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 
-data Program = Program PInfo [(String, Block)]
+data Program a = Program a [(String, Block)]
   deriving (Show)
 
-data PInfo = PInfo { pInfoLocals :: [String]
-                   , pInfoCFG :: Map String (Set String)
-                   , pInfoConflicts :: Map Arg (Set Arg)
-                   , pLocMap :: Map String StoreLoc
-                   , pInfoFrameSize :: Int }
-  deriving (Show, Eq)
-
-emptyPInfo :: PInfo
-emptyPInfo = PInfo { pInfoLocals = []
-                   , pInfoCFG = M.empty
-                   , pInfoConflicts = M.empty
-                   , pLocMap = M.empty
-                   , pInfoFrameSize = -1 }
-
-data Block = Block BInfo [Instr]
+data Block = Block [Instr]
   deriving (Show)
-
-data BInfo = BInfo { bInfoLiveAfterSets :: [Set Arg]
-                   , bInfoConflicts     :: Map Arg (Set Arg)
-                   , bInfoMoveRelated   :: Map Arg (Set Arg) }
-  deriving (Show, Eq)
-
-emptyBInfo :: BInfo
-emptyBInfo = BInfo [] M.empty M.empty
 
 data Instr = Addq Arg Arg | Subq Arg Arg | Movq Arg Arg | Retq
            | Negq Arg | Callq String | Pushq Arg | Popq Arg
@@ -93,10 +69,9 @@ prettyPrintBinOp op randL randR =
 
 
 instance PrettyPrint Block where
-  prettyPrint (Block _ instrs) = concatMap (("\t" ++) . prettyPrint) instrs
+  prettyPrint (Block instrs) = concatMap (("\t" ++) . prettyPrint) instrs
 
-
-instance PrettyPrint Program where
+instance PrettyPrint (Program a) where
   prettyPrint (Program _ bs) = concatMap printBlock bs
    where
      printBlock ("main", block) =

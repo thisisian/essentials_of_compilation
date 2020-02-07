@@ -22,21 +22,21 @@ compile :: R2.Program -> String
 compile =
   prettyPrint
   . patchInstructions
-  . allocateRegisters
-  . buildInterference
-  . uncoverLive
-  . selectInstructions
-  . uncoverLocals
-  . buildCFG
-  . explicateControl
-  . rco
-  . uniquify
-  . shrink
+  . assignHomes
+  . allocateRegisters -- :: X1.Program IGraph -> X1.Program LocMap
+  . buildInterference -- :: X1.Program (CFG, Locals, LiveSets) -> X1.Program IGraph
+  . uncoverLive--  :: X1.Program (CFG, Locals) -> (X1.Program (CFG, Locals, LiveSets)
+  . selectInstructions -- :: C1.Program (CFG, Locals) -> X1.Program (CFG, Locals)
+  . buildCFG --  :: C1.Program () -> C1.Program CFG
+  . explicateControl  -- :: R2.Program -> C1.Program ()
+  . rco -- :: R2.Program -> R2.Program
+  . uniquify -- :: R2.Program -> R2.Program
+  . shrink -- :: R2.Program -> R2.Program
 
 {----- Shrink -----}
 
 shrink :: R2.Program -> R2.Program
-shrink (R2.Program i e) = (R2.Program i (shrinkExpr e))
+shrink (R2.Program e) = (R2.Program (shrinkExpr e))
 
 -- Subtract, and, or, <=, >, >=
 shrinkExpr :: R2.Expr -> R2.Expr
@@ -70,7 +70,7 @@ shrinkExpr (R2.If cond eT eF) =
 type SymbolTable = Map String String
 
 uniquify :: R2.Program -> R2.Program
-uniquify (R2.Program i e) = R2.Program i $
+uniquify (R2.Program e) = R2.Program $
   runFreshEnv "_uni" (uniquifyExpr M.empty e)
 
 uniquifyExpr :: SymbolTable -> R2.Expr -> FreshEnv R2.Expr
@@ -108,7 +108,7 @@ uniquifyExpr st (R2.If cond eT eF) =
 {----- Remove Complex Operations and Operands -----}
 
 rco :: R2.Program -> R2.Program
-rco (R2.Program i e) = R2.Program i $ runFreshEnv "_rco" (rcoExpr e)
+rco (R2.Program e) = R2.Program $ runFreshEnv "_rco" (rcoExpr e)
 
 rcoExpr :: R2.Expr -> FreshEnv R2.Expr
 rcoExpr (R2.Num x) = return $ R2.Num x
@@ -200,24 +200,10 @@ makeBindings [] e = e
 
 {----- Explicate Control -----}
 
-data EcS = EcS { ecsBlocks :: Map String C1.Tail, freshBlockNum :: Int }
-
-runEcState :: R2.Expr -> (C1.Tail, Map String C1.Tail)
-runEcState e =
-  let (startBlock, ecsState) = runState (ecTail e) (EcS M.empty 0)
-  in (startBlock, ecsBlocks ecsState)
-
-newBlock :: C1.Tail -> State EcS (String)
-newBlock t = do
-  (EcS blocks x) <- get
-  let lbl = "block"++show x
-  put (EcS (M.insert lbl t blocks) (x+1))
-  return lbl
-
-explicateControl :: R2.Program -> C1.Program
-explicateControl (R2.Program _ e) =
-  let (startBlock, blocks) = runEcState e
-  in C1.Pgrm C1.emptyInfo (("start", startBlock):(M.toList blocks))
+explicateControl :: R2.Program -> C1.Program ()
+explicateControl (R2.Program e) =
+  C1.Pgrm () (("start", startBlock):M.toList blocks)
+ where (startBlock, blocks) = runEcState e
 
 ecTail :: R2.Expr -> State EcS C1.Tail
 ecTail (R2.Let s be e) = do
@@ -302,10 +288,27 @@ ecCmp R2.Eq = C1.Eq
 ecCmp R2.Lt = C1.Lt
 ecCmp c = error $ "Called ecCmp on " ++ show c
 
-{- Build CFG -}
+{- A monad for explicate control -}
+data EcS = EcS { ecsBlocks :: Map String C1.Tail, freshBlockNum :: Int }
 
-buildCFG :: C1.Program -> C1.Program
-buildCFG (C1.Pgrm info bs) = C1.Pgrm info{ C1.infoCFG = cfg } bs
+runEcState :: R2.Expr -> (C1.Tail, Map String C1.Tail)
+runEcState e =
+  let (startBlock, ecsState) = runState (ecTail e) (EcS M.empty 0)
+  in (startBlock, ecsBlocks ecsState)
+
+newBlock :: C1.Tail -> State EcS (String)
+newBlock t = do
+  (EcS blocks x) <- get
+  let lbl = "block"++show x
+  put (EcS (M.insert lbl t blocks) (x+1))
+  return lbl
+
+{----- Build CFG -----}
+
+type CFG = Map String (Set String)
+
+buildCFG :: C1.Program () -> C1.Program CFG
+buildCFG (C1.Pgrm () bs) = C1.Pgrm cfg bs
  where cfg = mkCFG bs M.empty
 
 mkCFG :: [(String, C1.Tail)]
@@ -325,30 +328,15 @@ mkCFG ((s, b):bs) m = case b of
 
 mkCFG [] m = m
 
-{- Uncover Locals -}
+{----- Select Instructions -----}
 
-uncoverLocals :: C1.Program -> C1.Program
-uncoverLocals (C1.Pgrm info bs) =
-  C1.Pgrm info { C1.infoLocals = locals } bs
- where locals = concatMap (\(_, t) -> collectLocals t) bs
-
-collectLocals :: C1.Tail -> [String]
-collectLocals (C1.Seq (C1.Assign n _) t) = n : collectLocals t
-collectLocals (C1.Return _) = []
-collectLocals (C1.Goto _) = []
-collectLocals (C1.If _ _ _ _ _) = []
-
-{- Select Instructions -}
-
-selectInstructions :: C1.Program -> X1.Program
-selectInstructions (C1.Pgrm info bs) =
-  (X1.Program
-    X1.emptyPInfo { X1.pInfoLocals = C1.infoLocals info
-                  , X1.pInfoCFG = C1.infoCFG info }
+selectInstructions :: C1.Program CFG -> X1.Program CFG
+selectInstructions (C1.Pgrm cfg bs) =
+  (X1.Program cfg
     bs')
  where
   bs' = map (\(l, b) -> (l, mkBlock . siTail $ b)) bs
-  mkBlock is = X1.Block X1.emptyBInfo is
+  mkBlock is = X1.Block is
 
 
 siTail :: C1.Tail -> [X1.Instr]
@@ -423,14 +411,17 @@ siCompare :: C1.Compare -> X1.CC
 siCompare (C1.Eq) = X1.CCEq
 siCompare (C1.Lt) = X1.CCL
 
-{- Uncover Live -}
+{----- Uncover Live -----}
 
-uncoverLive :: X1.Program -> X1.Program
-uncoverLive (X1.Program info bs) = X1.Program info bs'
+type LiveSets = [Set X1.Arg]
+
+uncoverLive :: X1.Program CFG -> X1.Program LiveSets
+uncoverLive (X1.Program cfg bs) =
+  X1.Program liveSets bs
 
  where
-   bs' = ulBlocks bs cfg trav M.empty
-   cfg = X1.pInfoCFG info
+   liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveSets') bs
+     where liveSets' = ulBlocks2 bs cfg trav M.empty
 
    trav =
      map (\v -> fromJust $ M.lookup v v2s)
@@ -438,21 +429,20 @@ uncoverLive (X1.Program info bs) = X1.Program info bs'
 
    (g, v2s, _) = mapSetToGraph cfg
 
-
-ulBlocks :: [(String, X1.Block)]
+ulBlocks2 :: [(String, X1.Block)]
          -> Map String (Set String)
          -> [String]
          -> Map String [Set X1.Arg]
-         -> [(String, X1.Block)]
-ulBlocks bs cfg (s:ss) m = case M.lookup s cfg of
+         -> Map String [Set X1.Arg]
+ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
   Nothing -> error $ s ++ " is not in CFG"
   Just succs ->
     if null succs then
-      let (X1.Block _ is) = fromMaybe
+      let (X1.Block is) = fromMaybe
             (error $ "ulBocks:Find to find " ++ show s ++ " in CFG")
             $ lookup s bs
           m' = M.insert s (mkLiveAfterSets is S.empty) m
-      in ulBlocks bs cfg ss m'
+      in ulBlocks2 bs cfg ss m'
     else
       let init' =
             foldr S.union S.empty
@@ -463,16 +453,10 @@ ulBlocks bs cfg (s:ss) m = case M.lookup s cfg of
                          " in liveAfterSets map") $ M.lookup s' m))
             . S.toList
             $ succs
-          (X1.Block _ is) = fromJust $ lookup s bs
+          (X1.Block is) = fromJust $ lookup s bs
           m' = M.insert s (mkLiveAfterSets is init') m
-       in ulBlocks bs cfg ss m'
-ulBlocks bs _ [] m =
-  M.toList
-  . M.mapWithKey
-    (\s la -> let (X1.Block info insts) = fromJust $ lookup s bs
-              in (X1.Block info {X1.bInfoLiveAfterSets = la} insts))
-  $ m
-
+       in ulBlocks2 bs cfg ss m'
+ulBlocks2 _ _ [] m = m
 
 mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
 mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
@@ -495,29 +479,18 @@ mkSets set (i:is) = set : (mkSets set' is)
 
 mkSets _ [] = []
 
-{- Build Interference -}
+{----- Build Interference -----}
 
--- This builds the interference graph on a per-block basis, which
--- may be incorrect...
---
---buildInterference :: X1.Program -> X1.Program
---buildInterference (X1.Program i bs) = (X1.Program i bs')
--- where bs' = map (\(l, b) -> (l, bIBlock b)) bs
---
---bIBlock :: X1.Block -> X1.Block
---bIBlock (X1.Block i' is) = (X1.Block i is)
--- where
---  i =
---    i' { X1.bInfoConflicts =
---           buildInterfere (X1.bInfoLiveAfterSets i) is }
+type IGraph = Map X1.Arg (Set X1.Arg)
 
-buildInterference :: X1.Program -> X1.Program
-buildInterference (X1.Program info bs) = X1.Program info' bs
+buildInterference :: X1.Program LiveSets
+                  -> X1.Program IGraph
+buildInterference (X1.Program liveSets bs) =
+  X1.Program iGraph bs
  where
-   info' = info { X1.pInfoConflicts = buildInterfere sets insts }
-   sets = concatMap (\(_, (X1.Block binfo _)) -> X1.bInfoLiveAfterSets binfo)
-            bs
-   insts = concatMap (\(_, (X1.Block _ is)) -> is) bs
+   iGraph = buildInterfere sets insts
+   sets = liveSets
+   insts = concatMap (\(_, (X1.Block is)) -> is) bs
 
 buildInterfere
   :: [S.Set X1.Arg]
@@ -578,43 +551,15 @@ buildInterfere' (la:las) (i:is) =
 buildInterfere' [] [] = return ()
 buildInterfere' _ _ = error "buildInterfere: Mismatch between args and live after sets"
 
-{-- Allocate Registers --}
+{----- Allocate Registers -----}
 
-allocateRegisters :: X1.Program -> X1.Program
-allocateRegisters p@(X1.Program info _) = assignHomes locMap p
+type LocMap = Map String X1.StoreLoc
+
+allocateRegisters :: X1.Program IGraph -> X1.Program LocMap
+allocateRegisters (X1.Program iGraph bs) =
+  (X1.Program locMap bs)
  where
-   locMap =
-         colorGraph
-           (X1.pInfoConflicts info)
-           (M.empty)
-
-alBlock :: X1.Block -> X1.Block
-alBlock (X1.Block i is) =
-  let storeLocs =
-        colorGraph
-          (X1.bInfoConflicts i)
-          (X1.bInfoMoveRelated i)
-  in (X1.Block i (map (alInstr storeLocs) is))
-
-alInstr :: M.Map String X1.StoreLoc -> X1.Instr -> X1.Instr
-alInstr m (X1.Addq aL aR) = (X1.Addq (alArg m aL) (alArg m aR))
-alInstr m (X1.Movq aL aR) = (X1.Movq (alArg m aL) (alArg m aR))
-alInstr m (X1.Subq aL aR) = (X1.Subq (alArg m aL) (alArg m aR))
-alInstr m (X1.Negq a)     = (X1.Negq (alArg m a))
-alInstr _ (X1.Retq)       = X1.Retq
-alInstr _ (X1.Callq s)    = X1.Callq s
-alInstr _ (X1.Jmp s)      = X1.Jmp s
-alInstr _ i               = error $ "alInstr: " ++ show i
-
-alArg :: M.Map String X1.StoreLoc -> X1.Arg -> X1.Arg
-alArg m (X1.Var s) = case M.lookup s m of
-  Nothing -> (X1.Reg (Rcx)) -- Wha should it map to?
-  Just (X1.RegLoc r) -> (X1.Reg r)
-  Just (X1.Stack n) -> (X1.Deref Rbp n)
-alArg _ a@(X1.Num _)     = a
-alArg _ a@(X1.Deref _ _) = a
-alArg _ a@(X1.Reg _)     = a
-alArg _ a@(X1.ByteReg _) = a
+   locMap = colorGraph (iGraph) (M.empty)
 
 -- Returns list of Strings to X1.StoreLocs and frameSize
 colorGraph
@@ -697,20 +642,21 @@ storeLocFromColor n = case lookup n regIntAssoc of
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
 
-{-- Assign Homes --}
+{----- Assign Homes -----}
+
+type FrameSize = Int
 
 assignHomes
-  :: M.Map String X1.StoreLoc
-  -> X1.Program
-  -> X1.Program
-assignHomes locMap (X1.Program info bs) = X1.Program info' bs'
+  :: X1.Program (LocMap)
+  -> X1.Program (FrameSize)
+assignHomes (X1.Program locMap bs) =
+  X1.Program (frameSize locMap) bs'
  where
-  info' = info { X1.pInfoFrameSize = frameSize locMap }
   bs' = map (\(l, b) -> (l, ahBlock locMap b)) bs
 
 ahBlock :: M.Map String X1.StoreLoc -> X1.Block -> X1.Block
-ahBlock m (X1.Block info instrs) =
-  X1.Block info (map (ahInstr m) instrs)
+ahBlock m (X1.Block instrs) =
+  X1.Block (map (ahInstr m) instrs)
 
 ahInstr :: M.Map String X1.StoreLoc -> X1.Instr -> X1.Instr
 ahInstr m (X1.Addq aL aR)   = X1.Addq (ahArg m aL) (ahArg m aR)
@@ -739,11 +685,6 @@ ahArg _ a@(X1.Reg _) = a
 ahArg _ a@(X1.Deref _ _) = a
 ahArg _ a@(X1.ByteReg _) = a
 
-createLocMap :: X1.Program -> M.Map String X1.StoreLoc
-createLocMap (X1.Program info _) =
-  M.fromList (zip locals (map X1.Stack [-8,-16..]))
- where locals = X1.pInfoLocals info
-
 frameSize :: M.Map String X1.StoreLoc -> Int
 frameSize locMap =
   if nBytes `mod` 16 == 0
@@ -758,24 +699,23 @@ frameSize locMap =
              . M.elems
              $ locMap
 
-{- Patch Instructions -}
+{----- Patch Instructions -----}
 
-patchInstructions :: X1.Program -> X1.Program
-patchInstructions (X1.Program info bs) = X1.Program info bs'
+patchInstructions :: X1.Program (FrameSize) -> X1.Program ()
+patchInstructions (X1.Program fSize bs) = X1.Program () bs'
 
  where
   bs' = intro fSize : conclusion fSize : map (\(l, b) -> (l, pBlock b)) bs
-  fSize = X1.pInfoFrameSize info
 
 intro :: Int -> (String, X1.Block)
 intro fSize
   | fSize == 0 = ( "main",
-  X1.Block X1.emptyBInfo
+  X1.Block
     [ X1.Pushq (X1.Reg Rbp)
     , X1.Movq (X1.Reg Rsp) (X1.Reg Rbp)
     , X1.Jmp "start" ] )
   | otherwise  = ( "main",
-  X1.Block X1.emptyBInfo
+  X1.Block
     [ X1.Pushq (X1.Reg Rbp)
     , X1.Movq (X1.Reg Rsp) (X1.Reg Rbp)
     , X1.Subq (X1.Num fSize) (X1.Reg Rsp)
@@ -784,17 +724,17 @@ intro fSize
 conclusion :: Int -> (String, X1.Block)
 conclusion fSize
   | fSize == 0 =
-    ( "conclusion", X1.Block X1.emptyBInfo
+    ( "conclusion", X1.Block
       [ X1.Popq (X1.Reg Rbp)
       , X1.Retq ] )
   | otherwise  =
-    ( "conclusion", X1.Block X1.emptyBInfo
+    ( "conclusion", X1.Block
       [ X1.Addq (X1.Num fSize) (X1.Reg Rsp)
       , X1.Popq (X1.Reg Rbp)
       , X1.Retq ] )
 
 pBlock :: X1.Block -> X1.Block
-pBlock (X1.Block info instrs) = X1.Block info (concatMap pInstrs instrs)
+pBlock (X1.Block instrs) = X1.Block (concatMap pInstrs instrs)
 
 pInstrs :: X1.Instr -> [X1.Instr]
 pInstrs (X1.Movq (X1.Deref regL offL) (X1.Deref regR offR)) =
