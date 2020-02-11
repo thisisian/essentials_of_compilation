@@ -8,7 +8,9 @@ dependencies:
 - parsec
 - process 
 - system-filepath
+- tasty-quickcheck
 - random
+- QuickCheck
 
 ghc-options:
   - -Wall
@@ -26,6 +28,7 @@ default-extensions:
 
 library:
   source-dirs: src
+
 
 tests:
   essentials-of-compilation-test:

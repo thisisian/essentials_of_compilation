@@ -35,7 +35,7 @@ instance PrettyPrint Arg where
   prettyPrint (Reg r) = prettyPrint r
   prettyPrint (Deref r off) =
     show off ++ "(" ++ prettyPrint r ++ ")"
-  prettyPrint (Var _) = error "Attempted to prettyPrint a variable!"
+  prettyPrint (Var s) = "VAR_" ++ s
   prettyPrint (ByteReg r) = prettyPrint r
 
 instance PrettyPrint CC where

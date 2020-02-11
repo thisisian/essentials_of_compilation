@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
 import Control.Exception
+import Data.Either
 import System.Directory
 import System.Exit
 import System.IO.Temp
@@ -9,6 +10,8 @@ import System.Random
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Ingredients.ConsoleReporter
+import Test.Tasty.QuickCheck
+import Test.QuickCheck.Monadic
 
 import Common
 import qualified R0
@@ -22,8 +25,8 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  [ch1Tests, ch2Tests, ch3Tests, ch4Tests]
-  --[ch4Tests]
+  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
+  [ch4Tests]
 
 {----- Chapter 1 -----}
 
@@ -117,6 +120,7 @@ ch2TestExprs =
   , "(- (read))"
   , "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
   , "(let ([x 5]) x)"
+  , "(- 0 (+ 1 1))"
   ]
 
 {----- Chapter 3 -----}
@@ -131,6 +135,13 @@ ch3Tests = testGroup "Chapter 3" $ map (ch3CompileTest) ch2TestExprs
 
 ch4TypeCheck = typeCheckTest R2.parse R2.typeCheck
 
+ch4TypeCheckProp :: TestTree
+ch4TypeCheckProp = testProperty "TypeCheck random programs" (property (prop_ShouldTypeCheck R2.typeCheck))
+
+ch4InterpCompilerEqProp :: TestTree
+ch4InterpCompilerEqProp = testProperty "Check compiler/interpreter equality on random progresms" $
+ withMaxSuccess 10000 (mapSize (\x -> 2) (property (prop_InterpCompilerEquality R2.interp Ch4.compile)))
+
 ch4TypeCheckFail = typeCheckFailTest R2.parse R2.typeCheck
 
 ch4InterpTest = interpTest R2.parse R2.typeCheck R2.interp
@@ -141,34 +152,38 @@ ch4CompileTest =
 
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
-  [ parseTest R2.parse (ch4TestExprs !! 1)
-  , parseTest R2.parse (ch4TestExprs !! 2)
-  , parseTest R2.parse (ch4TestExprs !! 3)
-  , parseTest R2.parse (ch4TestExprs !! 4)
-  , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
-  , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
-  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  , ch4TypeCheckFail "(cmp <= #t 3)"
-  , ch4TypeCheckFail "(let ([x 2]) y)"
-  , ch4TypeCheckFail "(- #t)"
-  , ch4TypeCheckFail "(+ #t 2)"
-  , ch4TypeCheckFail "(or 2 #f)"
-  , ch4TypeCheck (ch4TestExprs !! 1) R2.TBool
-  , ch4TypeCheck (ch4TestExprs !! 2) R2.TBool
-  , ch4TypeCheck (ch4TestExprs !! 3) R2.TBool
-  , ch4TypeCheck (ch4TestExprs !! 4) R2.TBool
-  , ch4TypeCheck (ch4TestExprs !! 5) R2.TBool
-  , ch4InterpTest (ch4TestExprs !! 1) [] 0
-  , ch4InterpTest (ch4TestExprs !! 2) [] 1
-  , ch4InterpTest (ch4TestExprs !! 3) [] 0
-  , ch4InterpTest (ch4TestExprs !! 4) [5] 1
-  , ch4InterpTest (ch4TestExprs !! 5) [2,3] 0
-  , ch4InterpTest (ch4TestExprs !! 6) [50] (-50)
-  , ch4InterpTest (ch4TestExprs !! 7) [] 10
-  ] ++
+  --[ parseTest R2.parse (ch4TestExprs !! 1)
+  --, parseTest R2.parse (ch4TestExprs !! 2)
+  --, parseTest R2.parse (ch4TestExprs !! 3)
+  --, parseTest R2.parse (ch4TestExprs !! 4)
+  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  --, ch4TypeCheckFail "(cmp <= #t 3)"
+  --, ch4TypeCheckFail "(let ([x 2]) y)"
+  --, ch4TypeCheckFail "(- #t)"
+  --, ch4TypeCheckFail "(+ #t 2)"
+  --, ch4TypeCheckFail "(or 2 #f)"
+  --, ch4TypeCheck (ch4TestExprs !! 1) R2.TBool
+  --, ch4TypeCheck (ch4TestExprs !! 2) R2.TBool
+  --, ch4TypeCheck (ch4TestExprs !! 3) R2.TBool
+  --, ch4TypeCheck (ch4TestExprs !! 4) R2.TBool
+  --, ch4TypeCheck (ch4TestExprs !! 5) R2.TBool
+  --, ch4InterpTest (ch4TestExprs !! 1) [] 0
+  --, ch4InterpTest (ch4TestExprs !! 2) [] 1
+  --, ch4InterpTest (ch4TestExprs !! 3) [] 0
+  --, ch4InterpTest (ch4TestExprs !! 4) [5] 1
+  --, ch4InterpTest (ch4TestExprs !! 5) [2,3] 0
+  --, ch4InterpTest (ch4TestExprs !! 6) [50] (-50)
+  --, ch4InterpTest (ch4TestExprs !! 7) [] 10
+  --, ch4InterpTest "(cmp > (read) (read))" [0, 100] 0
+  --] ++
   map ch4CompileTest ch2TestExprs ++
-  map ch4CompileTest ch4TestExprs
+  map ch4CompileTest ch4TestExprs ++
+  -- [ ch4TypeCheck2 ]
+  --[ch4InterpCompilerEqProp] ++
+  []
 
 ch4TestExprs =
   [ "(cmp <= (+ 2 3) (- 9 3))"
@@ -186,17 +201,16 @@ ch4TestExprs =
   , "#t"
   , "#f"
   , "(let ([r (read)]) (let ([x #t]) (let ([y (- 2)]) (let ([z (+ 5 9)]) (let ([m y]) (let ([n (not (cmp >= r z))]) (if (cmp eq? r z) (cmp eq? r y) (if (cmp < r m) x #f))))))))"
+  , "(let ([x (- 0)]) (let ([y x]) 0))"
+  , "(let ([rco23 (read)]) rco23)"
+  , "(if (let ([j (let ([h -2]) #f)]) j) #f #f)"
+  , "(- (if #f (read) 0))"
+  , "(let ([n (and #t (cmp eq? 11 (let ([f -5]) f)))]) -4)"
+  , "(let ([x 5]) (if (not #f) x 100))"
+  , "(let ([x 5]) (if (or #f #f) 90 x))"
+  , "(if #f (let ([d (if #f 0 0)]) d) 0)"
+  , "(cmp > (read) (read))"
   ]
-
-{-
-  , (let ([r (read)])
-    (let ([x #t])
-    (let ([y (- 2)])
-    (let ([z (+ 5 9)])
-    (let ([m y])
-    (let ([n (not (cmp >= r z))])
-      (if (cmp eq? r z) (cmp eq? r y) (if (cmp < r m) x #f))))))))
--}
 
 {----- Generalized Tests -----}
 
@@ -218,7 +232,7 @@ compileTest p tc i c prog = testCase ("Compile -- " ++ prog) $ do
   typeCheckAssert tc prog'
   input <- randomInput
   let expected =  i input prog' `mod` 256
-  actual <- compileAndRun c prog' input
+  actual <- compileAndRun c input prog'
   assertEqual ""
     expected
     actual
@@ -252,7 +266,6 @@ testCompileStep p tc refStps testStps i desc prog = testCase (desc ++ " -- " ++ 
     (i input ref)
     (i input test)
 
-
 typeCheckTest :: (Show b, Eq b)
   => Parser a -> TypeChecker a b -> String -> b -> TestTree
 typeCheckTest p tc prog expected = testCase ("TypeCheck -- " ++ prog) $ do
@@ -268,6 +281,26 @@ typeCheckFailTest p tc prog = testCase ("TypeCheck Failure -- " ++ prog) $ do
   case tc prog' of
     Left _ -> assertBool "" True
     Right ty -> assertFailure ("Expected failure, but got " ++ show ty)
+
+{----- Properties -----}
+
+prop_ShouldTypeCheck :: (Arbitrary a)
+                     => TypeChecker a b
+                     -> a
+                     -> Bool
+prop_ShouldTypeCheck tc prog = isRight $ tc prog
+
+prop_InterpCompilerEquality :: (Arbitrary a)
+                            => Interpreter a
+                            -> Compiler a
+                            -> a
+                            -> Property
+prop_InterpCompilerEquality i c prog = monadicIO $ do
+ ins <- run (randomInput)
+ compileRes <- run (compileAndRun c ins prog)
+ let interpRes = i ins prog `mod` 256
+ return (interpRes == compileRes)
+
 
 {----- Utilities -----}
 
@@ -291,22 +324,20 @@ typeCheckAssert tc prog =
     Left e -> assertFailure (show e)
     Right _ -> return ()
 
-compileAndRun :: Compiler a -> a -> [Int] -> IO (Int)
-compileAndRun c prog ins = do
-  asm <- emptySystemTempFile "eocAsm.s"
-  let bin = asm ++ ".out"
-  createEmptyFile bin
-  result <- finally
-     (do (writeFile asm (c prog))
-         (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
-           ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
-         case exitCode of
-           (ExitFailure _) -> return $ Left stdOut
-           ExitSuccess -> Right <$> runBinary bin ins)
-     (do removeFile asm
-         removeFile bin)
-  case result of
-    Left stdOut -> error stdOut
-    Right x -> return x
+compileAndRun :: Compiler a -> [Int] -> a -> IO Int
+compileAndRun c ins prog = do
+  withEmptyTempFile "eocAsm.s" $ \asm ->
+    withEmptyTempFile "eocBin.out" $ \bin -> do
+      writeFile asm (c prog)
+      (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+        ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
+      case exitCode of
+        (ExitFailure _) -> error $ stdOut
+        ExitSuccess -> runBinary bin ins
 
- where createEmptyFile f = writeFile f ""
+withEmptyTempFile :: String -> (FilePath -> IO b) -> IO b
+withEmptyTempFile fp f =
+  bracket
+    (emptySystemTempFile fp)
+    removeFile
+    f

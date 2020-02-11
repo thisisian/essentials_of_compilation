@@ -79,8 +79,9 @@ runBinary fp ins = withCreateProcess process $
      mbExitCode <- getProcessExitCode ph
      case mbExitCode of
        Nothing -> do
-         -- The process is probably closed so just ignore
-         -- failure. Messy, I know
+         -- If an error gets thrown, it's probably because
+         -- the process exited after checking exit code, but before
+         -- we send the next input. So we'll ignore the failure.
          catch (hPutStr hIn (show i ++ "\n"))
            (\(SomeException _) -> return ())
          loop hIn ph is

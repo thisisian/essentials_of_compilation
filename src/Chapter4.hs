@@ -1,19 +1,22 @@
 module Chapter4 where
 
-import qualified R2
-import qualified C1
-import qualified X861 as X1
-
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Graph
-import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe
 import Data.List
 import Data.Set (Set)
-import Data.Tuple
 import qualified Data.Set as S
+import Data.Tuple
+
+
+import Debug.Trace
+
+import qualified R2
+import qualified C1
+import qualified X861 as X1
 
 import Common
 import Color
@@ -27,6 +30,7 @@ compile =
   . buildInterference
   . uncoverLive
   . selectInstructions
+  . removeUnreachable
   . buildCFG
   . explicateControl
   . rco
@@ -74,7 +78,7 @@ uniquify (R2.Program e) = R2.Program $
 
 uniquifyExpr :: SymbolTable -> R2.Expr -> FreshEnv R2.Expr
 uniquifyExpr _ (R2.Num x) = return $ R2.Num x
-uniquifyExpr _ R2.Read =return R2.Read
+uniquifyExpr _ R2.Read = return R2.Read
 uniquifyExpr st (R2.Neg e) = R2.Neg <$> uniquifyExpr st e
 uniquifyExpr st (R2.Add eL eR) =
   return R2.Add `ap` uniquifyExpr st eL `ap` uniquifyExpr st eR
@@ -141,10 +145,10 @@ rcoExpr (R2.Cmp cmp eL eR)
       return $ makeBindings (bindingsL++bindingsR) (R2.Cmp cmp eL' eR')
   | otherwise = error $ "Found " ++ show cmp ++ "in RCO step."
 rcoExpr (R2.If cond eT eF) = do
-  cond' <- rcoExpr cond
+  (bindings, cond') <- rcoArg cond
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
-  return (R2.If cond' eT' eF')
+  return $ makeBindings bindings (R2.If cond' eT' eF')
 
 rcoArg :: R2.Expr -> FreshEnv ([(String, R2.Expr)], R2.Expr)
 rcoArg (R2.Num x) = return ([], R2.Num x)
@@ -185,11 +189,11 @@ rcoArg (R2.Cmp cmp eL eR)
              , R2.Var n)
   | otherwise = error $ "Found " ++ show cmp ++ "in RCO step."
 rcoArg (R2.If cond eT eF) = do
-  cond' <- rcoExpr cond
+  (bindings, cond') <- rcoArg cond
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
   n <- fresh
-  return ([(n, R2.If cond' eT' eF')], R2.Var n)
+  return (bindings ++ [(n, R2.If cond' eT' eF')], R2.Var n)
 
 makeBindings :: [(String, R2.Expr)] -> R2.Expr -> R2.Expr
 makeBindings ((b, be):bs) e =
@@ -235,6 +239,10 @@ ecPred R2.T t1 _ =
   return t1
 ecPred R2.F _ t2 =
   return t2
+ecPred a@(R2.Var _) t1 t2 = do
+  l1 <- newBlock t1
+  l2 <- newBlock t2
+  return $ C1.If C1.Eq (ecArg a) C1.T l1 l2
 ecPred (R2.Not e) t1 t2 = do
   l1 <- newBlock t1
   l2 <- newBlock t2
@@ -252,7 +260,6 @@ ecPred (R2.Cmp cmp eL eR) t1 t2 = do
 ecPred (R2.Let s eB e) t1 t2 = do
   e' <- ecPred e t1 t2
   ecAssign eB s e'
-
 ecPred e _ _ = error $ "ecPred: " ++ show e
 
 ecAssign :: R2.Expr -> String -> C1.Tail -> State EcS C1.Tail
@@ -279,7 +286,11 @@ ecAssign (R2.If cond eT eF) s t = do
   eT' <- ecAssign eT s (C1.Goto lbl)
   eF' <- ecAssign eF s (C1.Goto lbl)
   ecPred cond eT' eF'
-ecAssign e _ _ = error $ "Called ecAssign on " ++ show e
+ecAssign a@(R2.Let sIn bE e) sOut t = do
+  let' <- ecAssign e sOut t
+  ecAssign bE sIn let'
+
+ecAssign e s t = error $ "Called ecAssign on " ++ show e ++ ", " ++ show s ++ ", " ++ show t
 
 ecArg :: R2.Expr -> C1.Arg
 ecArg (R2.Num x) = C1.Num x
@@ -332,6 +343,21 @@ mkCFG ((s, b):bs) m = case b of
     in mkCFG bs m'
 
 mkCFG [] m = m
+
+{----- Remove Unreachable Blocks -----}
+
+removeUnreachable :: C1.Program CFG -> C1.Program CFG
+removeUnreachable (C1.Pgrm cfg bs) = (C1.Pgrm cfg bs')
+ where
+   bs' = filter (\(lbl, _) -> lbl `elem` reachableBlks) bs
+
+   reachableBlks :: [String]
+   reachableBlks = map (\v -> fromJust $ M.lookup v v2lbl)
+                   $ reachable g startVert
+   startVert = fromJust $  M.lookup "start" lbl2v
+
+   (g, v2lbl, lbl2v) = mapSetToGraph cfg
+
 
 {----- Select Instructions -----}
 
@@ -414,13 +440,31 @@ siCompare C1.Lt = X1.CCL
 
 {----- Uncover Live -----}
 
+printLiveSets :: [(String, X1.Block)] -> Map String [Set X1.Arg] -> String
+printLiveSets ((lbl, X1.Block is) : bs) liveSets =
+  let liveSets' = fromJust $ M.lookup lbl liveSets
+  in "\n" ++ lbl ++ ":\n" ++ printLiveSets' is liveSets' ++ printLiveSets bs liveSets
+printLiveSets [] _ = []
+
+printLiveSets' :: [X1.Instr] -> [Set X1.Arg] -> String
+printLiveSets' (i:is) (s:ss) =
+  prettyPrint i ++ printSet (S.toList s) ++ printLiveSets' is ss
+ where
+   printSet :: [X1.Arg] -> String
+   printSet args = "{" ++ unwords (map prettyPrint args) ++ "}\n"
+printLiveSets' [] [] = []
+printLiveSets' [] e = error $ "extra sets: " ++ show e
+printLiveSets' e [] = error $ "extra instructions: " ++ show e
+
+
 type LiveSets = [Set X1.Arg]
 
 uncoverLive :: X1.Program CFG -> X1.Program LiveSets
-uncoverLive (X1.Program cfg bs) = X1.Program liveSets bs
+uncoverLive (X1.Program cfg bs) = {- trace (show "\nLiveBefore:\n" ++ printLiveSets bs liveBefore) -} X1.Program liveSets bs
  where
-   liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveSets') bs
-     where liveSets' = ulBlocks2 bs cfg trav M.empty
+   liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveAfter) bs
+   liveAfter = liveAfterBlocks bs liveBefore
+   liveBefore = liveBeforeBlocks bs cfg trav M.empty
 
    trav =
      map (\v -> fromJust $ M.lookup v v2s)
@@ -428,24 +472,57 @@ uncoverLive (X1.Program cfg bs) = X1.Program liveSets bs
 
    (g, v2s, _) = mapSetToGraph cfg
 
-ulBlocks2 :: [(String, X1.Block)]
-         -> Map String (Set String)
-         -> [String]
-         -> Map String [Set X1.Arg]
-         -> Map String [Set X1.Arg]
-ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
+liveAfterBlocks :: [(String, X1.Block)]
+                -> Map String [Set X1.Arg] -- Live before sets
+                -> Map String [Set X1.Arg]
+liveAfterBlocks bs liveBeforeSets =
+  M.fromList . (map (\(lbl, (X1.Block is)) ->
+                    (lbl, mkLiveAfters liveBeforeSets is (fromJust . M.lookup lbl $ liveBeforeSets)))) $ bs
+
+mkLiveAfters :: Map String [Set X1.Arg]
+             -> [X1.Instr]
+             -> [Set X1.Arg]
+             -> [Set X1.Arg]
+mkLiveAfters liveBefores ((X1.Jmp lbl):is) (s:ss) =
+  if null is then [liveNextBlock]
+  else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
+ where
+   liveNextBlock =
+     case M.lookup lbl liveBefores of
+         Nothing -> S.empty
+         Just lb -> head lb
+
+mkLiveAfters liveBefores ((X1.JmpIf _ lbl):is) (s:ss) =
+  if null is then [liveNextBlock]
+  else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
+ where
+   liveNextBlock =
+     case M.lookup lbl liveBefores of
+         Nothing -> S.empty
+         Just lb -> head lb
+
+mkLiveAfters liveBefores (i:is) (_:ss) =
+  head ss : mkLiveAfters liveBefores is ss
+mkLiveAfters _ [] [] = []
+
+liveBeforeBlocks :: [(String, X1.Block)]
+                 -> Map String (Set String)
+                 -> [String]
+                 -> Map String [Set X1.Arg]
+                 -> Map String [Set X1.Arg]
+liveBeforeBlocks  bs cfg (s:ss) m = case M.lookup s cfg of
   Nothing -> error $ s ++ " is not in CFG"
   Just succs ->
     if null succs then
       let (X1.Block is) = fromMaybe
-            (error $ "ulBocks:Find to find " ++ show s ++ " in CFG")
+            (error $ "liveBeforeBlocks :Cant find " ++ show s ++ " in bs")
             $ lookup s bs
-          m' = M.insert s (mkLiveAfterSets is S.empty) m
-      in ulBlocks2 bs cfg ss m'
+          m' = M.insert s (mkLiveBeforeSets is S.empty) m
+      in liveBeforeBlocks bs cfg ss m'
     else
-      let init' =
+      let liveAfter =
             foldr S.union S.empty
-            . head
+            . map head
             . map (\s' ->
                      fromMaybe
                        (error $ "ulBlocks: Failed to find " ++ show s' ++
@@ -454,18 +531,18 @@ ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
             . S.toList
             $ succs
           (X1.Block is) = fromJust $ lookup s bs
-          m' = M.insert s (mkLiveAfterSets is init') m
-       in ulBlocks2 bs cfg ss m'
-ulBlocks2 _ _ [] m = m
+          m' = M.insert s (mkLiveBeforeSets is liveAfter) m
+       in liveBeforeBlocks bs cfg ss m'
+liveBeforeBlocks _ _ [] m = m
 
-mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
-mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
+mkLiveBeforeSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
+mkLiveBeforeSets is liveAfter = reverse $ mkSets liveAfter (reverse is)
 
 mkSets :: S.Set X1.Arg -> [X1.Instr] -> [S.Set X1.Arg]
-mkSets set (i:is) = set : mkSets set' is
+mkSets liveAfter (i:is) = liveBefore : mkSets liveBefore is
  where
-   set' =
-     S.filter X1.isVar $ (set S.\\ w i) `S.union` r i
+   liveBefore =
+     S.filter X1.isVar $ (liveAfter S.\\ w i) `S.union` r i
 
    w instr =
      case X1.writeArgs instr of
@@ -478,6 +555,73 @@ mkSets set (i:is) = set : mkSets set' is
        _      -> S.empty
 
 mkSets _ [] = []
+
+--  {----- Uncover Live -----}
+--
+--  type LiveSets = [Set X1.Arg]
+--
+--  uncoverLive :: X1.Program CFG -> X1.Program LiveSets
+--  uncoverLive (X1.Program cfg bs) = X1.Program liveSets bs
+--   where
+--     liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveSets') bs
+--       where liveSets' = ulBlocks2 bs cfg trav M.empty
+--
+--     trav =
+--       map (\v -> fromJust $ M.lookup v v2s)
+--       . topSort . transposeG $ g
+--
+--     (g, v2s, _) = mapSetToGraph cfg
+--
+--  ulBlocks2 :: [(String, X1.Block)]
+--           -> Map String (Set String)
+--           -> [String]
+--           -> Map String [Set X1.Arg]
+--           -> Map String [Set X1.Arg]
+--  ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
+--    Nothing -> error $ s ++ " is not in CFG"
+--    Just succs ->
+--      if null succs then
+--        let (X1.Block is) = fromMaybe
+--              (error $ "ulBocks:Find to find " ++ show s ++ " in CFG")
+--              $ lookup s bs
+--            m' = M.insert s (mkLiveAfterSets is S.empty) m
+--        in ulBlocks2 bs cfg ss m'
+--      else
+--        let init' =
+--              foldr S.union S.empty
+--              . head
+--              . map (\s' ->
+--                       fromMaybe
+--                         (error $ "ulBlocks: Failed to find " ++ show s' ++
+--                          " in liveAfterSets map")
+--                         (M.lookup s' m))
+--              . S.toList
+--              $ succs
+--            (X1.Block is) = fromJust $ lookup s bs
+--            m' = M.insert s (mkLiveAfterSets is init') m
+--         in ulBlocks2 bs cfg ss m'
+--  ulBlocks2 _ _ [] m = m
+--
+--  mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
+--  mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
+--
+--  mkSets :: S.Set X1.Arg -> [X1.Instr] -> [S.Set X1.Arg]
+--  mkSets set (i:is) = set : mkSets set' is
+--   where
+--     set' =
+--       S.filter X1.isVar $ (set S.\\ w i) `S.union` r i
+--
+--     w instr =
+--       case X1.writeArgs instr of
+--         Just s   -> s
+--         _        -> S.empty
+--
+--     r instr =
+--       case X1.readArgs instr of
+--         Just s -> s
+--         _      -> S.empty
+--
+--  mkSets _ [] = []
 
 {----- Build Interference -----}
 
@@ -724,3 +868,14 @@ pInstrs (X1.Movzbq l d@(X1.Deref _ _)) =
 
 pInstrs i@(X1.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]
+
+
+{-- End --}
+testExpr = "(cmp > (read) (read))"
+
+
+testThing = case R2.parse testExpr of
+  Left _ -> undefined
+  Right x -> removeUnreachable . buildCFG . explicateControl. rco . uniquify.  shrink $ x
+
+compileFailing = compileToFile R2.parse compile testExpr "./test/ch4test"
