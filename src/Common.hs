@@ -24,6 +24,8 @@ type Parser a = (String -> Either ParseError a)
 
 type Interpreter a = ([Int] -> a -> Int)
 
+type InterpreterIO a b = ([Int] -> a -> IO b)
+
 type TypeChecker a t = (a -> Either TypeError t)
 
 type Compiler a = (a -> String)

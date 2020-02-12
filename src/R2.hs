@@ -23,15 +23,15 @@ import Common
 newtype Program = Program Expr
 
 data Expr
-  = Num Int --x
-  | Read  --x
-  | Neg Expr --x
-  | Add Expr Expr --x
-  | Sub Expr Expr --x
-  | Var String --x
+  = Num Int
+  | Read
+  | Neg Expr
+  | Add Expr Expr
+  | Sub Expr Expr
+  | Var String
   | Let String Expr Expr
-  | T --x
-  | F --x
+  | T
+  | F
   | And Expr Expr
   | Or Expr Expr
   | Not Expr
@@ -40,9 +40,6 @@ data Expr
 
 data Compare = Eq | Lt | Le | Gt | Ge
   deriving Eq
-
-
-
 
 {----- Show Instances -----}
 
@@ -403,110 +400,6 @@ genExpr env ty = sized $ \n -> do
      ty' <- oneof [return TNum, return TBool]
      let env' = M.insert name ty' env
      Let name <$> genExpr env (Just ty') <*> genExpr env' ty
-
--- genExpr :: Map String Type -> Maybe Type -> Gen Expr
--- genExpr env ty = sized $ \n ->
---
---   if (n <= 1) then
---     case ty of
---     Nothing ->
---       if M.null env then
---         frequency
---           [ (4, boolVals)
---           , (4, numVals)
---           , (2, binOps)
---           , (2, arithOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---       else
---         frequency
---           [ (4, boolVals)
---           , (4, numVals)
---           , (4 ,varVals)
---           , (2, binOps)
---           , (2, arithOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---     Just TBool ->
---       if M.null . M.filter (== TBool) $ env then
---         frequency
---           [ (4, boolVals)
---           , (2, binOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---       else
---         frequency
---           [ (4, boolVals)
---           , (4, varVals)
---           , (2, binOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---     Just TNum ->
---       if M.null . M.filter (== TNum) $ env then
---         frequency
---           [ (4, numVals)
---           , (2, arithOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---       else
---         frequency
---           [ (4, numVals)
---           , (4, varVals)
---           , (2, arithOps)
---           , (1, letExpr)
---           , (1, ifExpr)
---           ]
---
---  where
---    boolVals :: Gen Expr
---    boolVals = oneof [return T, return F]
---
---    numVals :: Gen Expr
---    numVals = frequency
---      [ (5, Num <$> arbitrary)
---      , (1, return Read) ]
---
---    varVals :: Gen Expr
---    varVals = oneof $
---        map (return . Var)
---        . M.keys
---        . M.filter (\t -> case ty of
---                      Nothing -> True
---                      Just TBool -> t == TBool
---                      Just TNum -> t == TNum)
---        $ env
---
---    arithOps :: Gen Expr
---    arithOps = oneof
---      [ Neg <$> genExpr env (Just TNum)
---      , Add <$> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---      , Sub <$> genExpr env (Just TNum) <*> genExpr env (Just TNum) ]
---
---    binOps :: Gen Expr
---    binOps = oneof
---      [ Not <$> genExpr env (Just TBool)
---      , Cmp <$> arbitrary <*> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---      , Or <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---      , And <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---      ]
---
---    ifExpr :: Gen Expr
---    ifExpr = do
---      tyChoice <- oneof [return (Just TBool), return (Just TNum)]
---      let ty' = if ty == Nothing then tyChoice else ty
---      If <$> genExpr env (Just TBool) <*> genExpr env ty' <*> genExpr env ty'
---
---    letExpr :: Gen Expr
---    letExpr = do
---      name <- growingElements (map (:[]) ['a' .. 'z'])
---      ty' <- oneof [return TNum, return TBool]
---      let env' = M.insert name ty' env
---      Let name <$> genExpr env (Just ty') <*> genExpr env' ty
 
 instance Arbitrary Compare where
   arbitrary = elements [Eq, Lt, Gt, Le, Ge]

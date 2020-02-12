@@ -11,6 +11,7 @@ dependencies:
 - tasty-quickcheck
 - random
 - QuickCheck
+- vector
 
 ghc-options:
   - -Wall
@@ -25,6 +26,7 @@ default-extensions:
 - ScopedTypeVariables
 - OverloadedStrings
 - LambdaCase
+- RankNTypes
 
 library:
   source-dirs: src

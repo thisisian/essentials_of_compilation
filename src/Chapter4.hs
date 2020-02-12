@@ -60,9 +60,9 @@ shrinkExpr (R2.Cmp R2.Eq eL eR) =
 shrinkExpr (R2.Cmp R2.Lt eL eR) =
   R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR)
 shrinkExpr (R2.Cmp R2.Le eL eR) =
-  R2.Not (R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL))
+  (R2.Let "_shrnk" (shrinkExpr eL) (R2.Not (R2.Cmp R2.Lt (shrinkExpr eR) (R2.Var "_shrnk"))))
 shrinkExpr (R2.Cmp R2.Gt eL eR) =
-  R2.Cmp R2.Lt (shrinkExpr eR) (shrinkExpr eL)
+  (R2.Let "_shrnk" (shrinkExpr eL) (R2.Cmp R2.Lt (shrinkExpr eR) (R2.Var "_shrnk")))
 shrinkExpr (R2.Cmp R2.Ge eL eR) =
   R2.Not (R2.Cmp R2.Lt (shrinkExpr eL) (shrinkExpr eR))
 shrinkExpr (R2.If cond eT eF) =
@@ -872,6 +872,13 @@ pInstrs i = [i]
 
 {-- End --}
 testExpr = "(cmp > (read) (read))"
+
+-- after rco:
+--(if #f (let ([_rco0 (if #f 0 0)]) (let ([_uni0 _rco0]) _uni0)) 0)
+-- after explicateControl:
+-- [("start",Return (Plain (Num 0))),
+--    ("block0",Seq (Assign "_uni0" (Plain (Var "_rco0"))) (Return (Plain (Var "_uni0"))))]
+
 
 
 testThing = case R2.parse testExpr of

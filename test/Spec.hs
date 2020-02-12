@@ -17,6 +17,7 @@ import Common
 import qualified R0
 import qualified R1
 import qualified R2
+import qualified R3
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 import qualified Chapter4 as Ch4
@@ -25,8 +26,8 @@ main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests]
-  [ch4Tests]
+  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests, ch5Tests]
+  [ch5Tests]
 
 {----- Chapter 1 -----}
 
@@ -120,7 +121,6 @@ ch2TestExprs =
   , "(- (read))"
   , "(let ([x 5]) (let ([x x]) (- (+ x (+ x (- (+ x x)))))))"
   , "(let ([x 5]) x)"
-  , "(- 0 (+ 1 1))"
   ]
 
 {----- Chapter 3 -----}
@@ -139,8 +139,8 @@ ch4TypeCheckProp :: TestTree
 ch4TypeCheckProp = testProperty "TypeCheck random programs" (property (prop_ShouldTypeCheck R2.typeCheck))
 
 ch4InterpCompilerEqProp :: TestTree
-ch4InterpCompilerEqProp = testProperty "Check compiler/interpreter equality on random progresms" $
- withMaxSuccess 10000 (mapSize (\x -> 2) (property (prop_InterpCompilerEquality R2.interp Ch4.compile)))
+ch4InterpCompilerEqProp = testProperty "Check compiler/interpreter equality on random programs" $
+ withMaxSuccess 100 (mapSize (\x -> 4) (property (prop_InterpCompilerEquality R2.interp Ch4.compile)))
 
 ch4TypeCheckFail = typeCheckFailTest R2.parse R2.typeCheck
 
@@ -152,38 +152,36 @@ ch4CompileTest =
 
 ch4Tests :: TestTree
 ch4Tests = testGroup "Chapter 4" $
-  --[ parseTest R2.parse (ch4TestExprs !! 1)
-  --, parseTest R2.parse (ch4TestExprs !! 2)
-  --, parseTest R2.parse (ch4TestExprs !! 3)
-  --, parseTest R2.parse (ch4TestExprs !! 4)
-  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  --, ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
-  --, ch4TypeCheckFail "(cmp <= #t 3)"
-  --, ch4TypeCheckFail "(let ([x 2]) y)"
-  --, ch4TypeCheckFail "(- #t)"
-  --, ch4TypeCheckFail "(+ #t 2)"
-  --, ch4TypeCheckFail "(or 2 #f)"
-  --, ch4TypeCheck (ch4TestExprs !! 1) R2.TBool
-  --, ch4TypeCheck (ch4TestExprs !! 2) R2.TBool
-  --, ch4TypeCheck (ch4TestExprs !! 3) R2.TBool
-  --, ch4TypeCheck (ch4TestExprs !! 4) R2.TBool
-  --, ch4TypeCheck (ch4TestExprs !! 5) R2.TBool
-  --, ch4InterpTest (ch4TestExprs !! 1) [] 0
-  --, ch4InterpTest (ch4TestExprs !! 2) [] 1
-  --, ch4InterpTest (ch4TestExprs !! 3) [] 0
-  --, ch4InterpTest (ch4TestExprs !! 4) [5] 1
-  --, ch4InterpTest (ch4TestExprs !! 5) [2,3] 0
-  --, ch4InterpTest (ch4TestExprs !! 6) [50] (-50)
-  --, ch4InterpTest (ch4TestExprs !! 7) [] 10
-  --, ch4InterpTest "(cmp > (read) (read))" [0, 100] 0
-  --] ++
+  [ parseTest R2.parse (ch4TestExprs !! 1)
+  , parseTest R2.parse (ch4TestExprs !! 2)
+  , parseTest R2.parse (ch4TestExprs !! 3)
+  , parseTest R2.parse (ch4TestExprs !! 4)
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (cmp eq? 4 4) (- 3))"
+  , ch4TypeCheckFail "(if (cmp eq? 2 2) (- 9 3) #f)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(if (cmp eq? 2 #f) #t #t)"
+  , ch4TypeCheckFail "(cmp <= #t 3)"
+  , ch4TypeCheckFail "(let ([x 2]) y)"
+  , ch4TypeCheckFail "(- #t)"
+  , ch4TypeCheckFail "(+ #t 2)"
+  , ch4TypeCheckFail "(or 2 #f)"
+  , ch4TypeCheck (ch4TestExprs !! 1) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 2) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 3) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 4) R2.TBool
+  , ch4TypeCheck (ch4TestExprs !! 5) R2.TBool
+  , ch4InterpTest (ch4TestExprs !! 1) [] 0
+  , ch4InterpTest (ch4TestExprs !! 2) [] 1
+  , ch4InterpTest (ch4TestExprs !! 3) [] 0
+  , ch4InterpTest (ch4TestExprs !! 4) [5] 1
+  , ch4InterpTest (ch4TestExprs !! 5) [2,3] 0
+  , ch4InterpTest (ch4TestExprs !! 6) [50] (-50)
+  , ch4InterpTest (ch4TestExprs !! 7) [] 10
+  , ch4InterpTest "(cmp > (read) (read))" [0, 100] 0
+  ] ++
   map ch4CompileTest ch2TestExprs ++
   map ch4CompileTest ch4TestExprs ++
-  -- [ ch4TypeCheck2 ]
-  --[ch4InterpCompilerEqProp] ++
-  []
+  [ch4InterpCompilerEqProp]
 
 ch4TestExprs =
   [ "(cmp <= (+ 2 3) (- 9 3))"
@@ -210,6 +208,32 @@ ch4TestExprs =
   , "(let ([x 5]) (if (or #f #f) 90 x))"
   , "(if #f (let ([d (if #f 0 0)]) d) 0)"
   , "(cmp > (read) (read))"
+  , "(cmp <= (read) (read))"
+  , "(- 0 (+ 1 1))"
+  ]
+
+{----- Chapter 5 -----}
+
+ch5InterpTest = interpIOTest R3.parse dummyTypeChecker R3.interp
+
+ch5Tests = testGroup "Chapter 5" $
+  [ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 2) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 3) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
+  ] ++
+  --map (parseTest R3.parse) ch5TestExprs ++
+  []
+
+ch5TestExprs =
+  [ "(let ([t (vector 40 #t (vector 2))]) (if (vector-ref t 1) (+ (vector-ref t 0) (vector-ref (vector-ref t 2) 0)) 44))"
+  , "(let ([t1 (vector 3 7)]) (let ([t2 t1]) (let ([nul (vector-set! t2 0 42)]) (vector-ref t1 0))))"
+  , "(vector-ref (let ([t (vector 42 7)]) t) 0)"
+  , "(let ([t (vector 10 20)]) (let ([b (vector-set! t 0 42)]) (vector-ref t 0)))"
+  , "(let ([t (vector 42 0)]) (vector-ref t 0))"
+  , "(let ([t (vector 42 #t)]) (if (vector-ref t 1) (vector-ref t 0) 99))"
   ]
 
 {----- Generalized Tests -----}
@@ -246,6 +270,18 @@ interpTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $ do
   prog' <- parseAssert p prog
   typeCheckAssert tc prog'
   assertEqual "" expected (i ins prog')
+
+interpIOTest
+  :: (Eq c, Show c)
+  => Parser a
+  -> TypeChecker a b
+  -> InterpreterIO a c
+  -> String -> [Int] -> c -> TestTree
+interpIOTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  typeCheckAssert tc prog'
+  actual <- i ins prog'
+  assertEqual "" expected actual
 
 testCompileStep
   :: Parser a
