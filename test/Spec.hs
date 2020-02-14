@@ -214,7 +214,7 @@ ch4TestExprs =
 
 {----- Chapter 5 -----}
 
-ch5InterpTest = interpIOTest R3.parse dummyTypeChecker R3.interp
+ch5InterpTest = interpIOTest R3.parse R3.typeCheck R3.interp
 
 ch5Tests = testGroup "Chapter 5" $
   [ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
