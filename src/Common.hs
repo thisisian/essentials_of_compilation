@@ -148,6 +148,9 @@ data Register = Rsp | Rbp | Rax | Rbx | Rcx | Rdx | Rsi | Rdi
 callerSaved :: [Register]
 callerSaved = [ Rax, Rdx, Rcx, Rsi, Rdi, R8, R9, R10, R11 ]
 
+calleeSaved :: [Register]
+calleeSaved = [ Rsp, Rbp, Rbx, R12, R13, R14 ]
+
 instance PrettyPrint Register where
   prettyPrint Rsp = "%rsp"
   prettyPrint Rbp = "%rbp"
@@ -166,3 +169,8 @@ instance PrettyPrint Register where
   prettyPrint R14 = "%r14"
   prettyPrint R15 = "%r15"
   prettyPrint Al  = "%al"
+
+
+fromEither :: Either a b -> b
+fromEither (Left _) = error $ "fromEither: Expected Right!"
+fromEither (Right x) = x

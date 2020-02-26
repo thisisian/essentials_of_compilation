@@ -10,7 +10,7 @@ int64_t* fromspace_begin;
 int64_t* fromspace_end;
 
 // The free pointer should always point to the next free memory
-// location. While the mutator (user program) is running this
+// location. While the mutator (user proograprogramograprogramograprogramm) is running this
 // should always be pointing into fromspace.
 int64_t* free_ptr;
 

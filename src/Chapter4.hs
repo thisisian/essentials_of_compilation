@@ -23,19 +23,19 @@ import Color
 
 compile :: R2.Program -> String
 compile =
-  prettyPrint
-  . patchInstructions
-  . assignHomes
-  . allocateRegisters
-  . buildInterference
-  . uncoverLive
-  . selectInstructions
-  . removeUnreachable
-  . buildCFG
-  . explicateControl
-  . rco
-  . uniquify
-  . shrink
+ prettyPrint
+ . patchInstructions
+ . assignHomes
+ . allocateRegisters
+ . buildInterference
+ . uncoverLive
+ . selectInstructions
+ . removeUnreachable
+ . buildCFG
+ . explicateControl
+ . rco
+ . uniquify
+ . shrink
 
 {----- Shrink -----}
 
@@ -556,73 +556,6 @@ mkSets liveAfter (i:is) = liveBefore : mkSets liveBefore is
 
 mkSets _ [] = []
 
---  {----- Uncover Live -----}
---
---  type LiveSets = [Set X1.Arg]
---
---  uncoverLive :: X1.Program CFG -> X1.Program LiveSets
---  uncoverLive (X1.Program cfg bs) = X1.Program liveSets bs
---   where
---     liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveSets') bs
---       where liveSets' = ulBlocks2 bs cfg trav M.empty
---
---     trav =
---       map (\v -> fromJust $ M.lookup v v2s)
---       . topSort . transposeG $ g
---
---     (g, v2s, _) = mapSetToGraph cfg
---
---  ulBlocks2 :: [(String, X1.Block)]
---           -> Map String (Set String)
---           -> [String]
---           -> Map String [Set X1.Arg]
---           -> Map String [Set X1.Arg]
---  ulBlocks2 bs cfg (s:ss) m = case M.lookup s cfg of
---    Nothing -> error $ s ++ " is not in CFG"
---    Just succs ->
---      if null succs then
---        let (X1.Block is) = fromMaybe
---              (error $ "ulBocks:Find to find " ++ show s ++ " in CFG")
---              $ lookup s bs
---            m' = M.insert s (mkLiveAfterSets is S.empty) m
---        in ulBlocks2 bs cfg ss m'
---      else
---        let init' =
---              foldr S.union S.empty
---              . head
---              . map (\s' ->
---                       fromMaybe
---                         (error $ "ulBlocks: Failed to find " ++ show s' ++
---                          " in liveAfterSets map")
---                         (M.lookup s' m))
---              . S.toList
---              $ succs
---            (X1.Block is) = fromJust $ lookup s bs
---            m' = M.insert s (mkLiveAfterSets is init') m
---         in ulBlocks2 bs cfg ss m'
---  ulBlocks2 _ _ [] m = m
---
---  mkLiveAfterSets :: [X1.Instr] -> Set X1.Arg -> [S.Set X1.Arg]
---  mkLiveAfterSets is init' = reverse $ mkSets init' (reverse is)
---
---  mkSets :: S.Set X1.Arg -> [X1.Instr] -> [S.Set X1.Arg]
---  mkSets set (i:is) = set : mkSets set' is
---   where
---     set' =
---       S.filter X1.isVar $ (set S.\\ w i) `S.union` r i
---
---     w instr =
---       case X1.writeArgs instr of
---         Just s   -> s
---         _        -> S.empty
---
---     r instr =
---       case X1.readArgs instr of
---         Just s -> s
---         _      -> S.empty
---
---  mkSets _ [] = []
-
 {----- Build Interference -----}
 
 type IGraph = Map X1.Arg (Set X1.Arg)
@@ -868,21 +801,3 @@ pInstrs (X1.Movzbq l d@(X1.Deref _ _)) =
 
 pInstrs i@(X1.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]
-
-
-{-- End --}
-testExpr = "(cmp > (read) (read))"
-
--- after rco:
---(if #f (let ([_rco0 (if #f 0 0)]) (let ([_uni0 _rco0]) _uni0)) 0)
--- after explicateControl:
--- [("start",Return (Plain (Num 0))),
---    ("block0",Seq (Assign "_uni0" (Plain (Var "_rco0"))) (Return (Plain (Var "_uni0"))))]
-
-
-
-testThing = case R2.parse testExpr of
-  Left _ -> undefined
-  Right x -> removeUnreachable . buildCFG . explicateControl. rco . uniquify.  shrink $ x
-
-compileFailing = compileToFile R2.parse compile testExpr "./test/ch4test"

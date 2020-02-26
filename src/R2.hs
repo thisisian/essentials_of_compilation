@@ -283,11 +283,6 @@ typeChkBinOp argTy retTy env eL eR = do
 
 data Thing = Thing Int
 
-testArbitrary = sample (arbitrary :: Gen Program)
-
-instance Arbitrary Thing where
-  arbitrary = genThing
-
 instance Arbitrary Program where
   arbitrary = Program <$> arbitrary
 
@@ -308,10 +303,7 @@ instance Arbitrary Expr where
   shrink (If e eT eF) =
     [eT, eF] ++ [ If e' eT' eF' | (e', eT', eF') <- shrink (e, eT, eF) ]
   shrink Read = [Num 0]
-
-
-genThing :: Gen Thing
-genThing = sized $ \n -> Thing <$> arbitrary
+  shrink _ = []
 
 genExpr :: Map String Type -> Maybe Type -> Gen Expr
 genExpr env ty = sized $ \n -> do

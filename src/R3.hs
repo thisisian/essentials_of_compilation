@@ -19,7 +19,7 @@ import qualified Text.Parsec as Parsec (parse)
 
 import Common
 
-newtype Program a = Program (Expr a)
+data Program b a = Program b (Expr a)
 
 data Expr a
   = Num Int
@@ -66,8 +66,8 @@ instance Show Val where
 
 {----- Show Instances -----}
 
-instance Show (Program a) where
-  show (Program e) = show e
+instance (Show b) => Show (Program b a) where
+  show (Program i e) = "(program " ++ show i ++ "\n" ++ show e ++ ")"
 
 instance Show (Expr a) where
   show (Num x) = show x
@@ -96,7 +96,7 @@ instance Show (Expr a) where
     "(vector-set! " ++ show e1 ++ " " ++ show idx ++ " " ++ show e2 ++ ")"
   show (Void) = "(void)"
   show (Collect x) = "(collect " ++ show x ++ ")"
-  show (Allocate x ty) = "(allocate " ++ show x ++ show ty ++ ")"
+  show (Allocate x ty) = "(allocate " ++ show x ++ " " ++ show ty ++ ")"
   show (GlobalValue s) = "(global-value " ++ s ++ ")"
 
 instance Show Compare where
@@ -114,15 +114,15 @@ instance Show Type where
 
 {----- Parser -----}
 
-parse :: Parser (Program ())
+parse :: Parser (Program () ())
 parse = Parsec.parse pProgram ""
 
-parseError :: String -> (Program ())
+parseError :: String -> (Program () ())
 parseError s = case Parsec.parse pProgram "" s of
   Left e -> error $ show e
   Right s' -> s'
 
-pProgram = Program <$> pExpr
+pProgram = Program () <$> pExpr
 
 pExpr = pNum <|> pVar <|> pTrue <|> pFalse <|> pParens pExpr'
  where
@@ -192,8 +192,8 @@ def = emptyDef { commentLine = ";;"
 
 type Env = Map String Val
 
-interp :: [Int] -> (Program a) -> IO (Val)
-interp inputs (Program e) = evalStateT (interpExpr M.empty e) inputs
+interp :: [Int] -> (Program b a) -> IO (Val)
+interp inputs (Program _ e) = evalStateT (interpExpr M.empty e) inputs
 
 interpExpr :: Env -> (Expr a) -> StateT [Int] IO Val
 interpExpr _ (Num x) = return $ VNum x
@@ -319,9 +319,12 @@ getType (Vector t _) = t
 getType (VectorRef t _ _) = t
 getType (VectorSet _ _ _) = TVoid
 getType Void = TVoid
+getType (Collect _) = TVoid
+getType (Allocate _ _) = TVoid
+getType (GlobalValue _) = TNum
 
-typeCheck :: Program () -> Either TypeError (Program Type)
-typeCheck (Program e) = Program <$> typeChkExpr M.empty e
+typeCheck :: Program () () -> Either TypeError (Program () Type)
+typeCheck (Program _ e) = Program () <$> typeChkExpr M.empty e
 
 typeChkExpr :: Map String Type -> Expr () -> Either TypeError (Expr Type)
 typeChkExpr _ (Num x) = return (Num x)
@@ -396,6 +399,9 @@ typeChkExpr env (VectorSet eV idx eSet) =do
 
 
 typeChkExpr _ Void = return Void
+typeChkExpr _ (Collect a) = return (Collect a)
+typeChkExpr _ (Allocate a b) = return (Allocate a b)
+typeChkExpr _ (GlobalValue a) = return (GlobalValue a)
 
 typeChkUniOp :: Type -> Map String Type
              -> Expr () -> Either TypeError (Expr Type)

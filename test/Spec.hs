@@ -21,6 +21,7 @@ import qualified R3
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 import qualified Chapter4 as Ch4
+import qualified Chapter5 as Ch5
 
 main :: IO ()
 main = defaultMain
@@ -216,6 +217,16 @@ ch4TestExprs =
 
 ch5InterpTest = interpIOTest R3.parse R3.typeCheck R3.interp
 
+ch5CompileTest =
+  compileIOTest R3.parse R3.typeCheck R3.interp conv Ch5.compile
+ where conv v = case v of
+         R3.VBool True -> 1
+         R3.VBool False -> 0
+         R3.VNum x -> x `mod` 256
+         R3.VVector _ -> error $ "Interpreter returned vector"
+         R3.VVoid -> 0
+
+
 ch5Tests = testGroup "Chapter 5" $
   [ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
   , ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
@@ -224,7 +235,9 @@ ch5Tests = testGroup "Chapter 5" $
   , ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
   , ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
   ] ++
-  --map (parseTest R3.parse) ch5TestExprs ++
+  --map ch5CompileTest ch2TestExprs ++
+  --map ch5CompileTest ch4TestExprs ++
+  map ch5CompileTest ch5TestExprs ++
   []
 
 ch5TestExprs =
@@ -270,6 +283,24 @@ interpTest p tc i prog ins expected = testCase ("Interp -- " ++ prog) $ do
   prog' <- parseAssert p prog
   typeCheckAssert tc prog'
   assertEqual "" expected (i ins prog')
+
+compileIOTest
+  :: Parser a
+  -> TypeChecker a b
+  -> InterpreterIO a c
+  -> (c -> Int) -- ^ Converts values from interpreter into Ints
+  -> Compiler a
+  -> String  -- ^ Program
+  -> TestTree
+compileIOTest p tc i conv c prog = testCase ("Compile -- " ++ prog) $ do
+  prog' <- parseAssert p prog
+  typeCheckAssert tc prog'
+  input <- randomInput
+  expected <- conv <$> i input prog'
+  actual <- compileAndRun c input prog'
+  assertEqual ""
+    expected
+    actual
 
 interpIOTest
   :: (Eq c, Show c)
@@ -365,15 +396,15 @@ compileAndRun c ins prog = do
   withEmptyTempFile "eocAsm.s" $ \asm ->
     withEmptyTempFile "eocBin.out" $ \bin -> do
       writeFile asm (c prog)
-      (exitCode, stdOut, _) <- readProcessWithExitCode "gcc"
+      (exitCode, stdOut, stdErr) <- readProcessWithExitCode "gcc"
         ["-g", "./test/testenv/runtime.o", asm, "-g", "-O0", "-o", bin] ""
       case exitCode of
-        (ExitFailure _) -> error $ stdOut
+        (ExitFailure _) -> error $ stdErr
         ExitSuccess -> runBinary bin ins
 
 withEmptyTempFile :: String -> (FilePath -> IO b) -> IO b
 withEmptyTempFile fp f =
   bracket
     (emptySystemTempFile fp)
-    removeFile
+    (\x -> return ())
     f
