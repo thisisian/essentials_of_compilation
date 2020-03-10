@@ -425,127 +425,118 @@ typeChkBinOp argTy env eL eR = do
       show argTy ++ " but got " ++ show tL ++
       " and " ++ show tR
 
---{----- Arbitrary Instances -----}
---
---data Thing = Thing Int
---
---testArbitrary = sample (arbitrary :: Gen Program)
---
---instance Arbitrary Thing where
---  arbitrary = genThing
---
---instance Arbitrary Program where
---  arbitrary = Program <$> arbitrary
---
---instance Arbitrary Expr where
---  arbitrary = genExpr M.empty Nothing
---  shrink (Neg e) = [Num 0, e] ++ [ Neg e' | e' <- shrink e ]
---  shrink (Add eL eR) =
---    [Num 0, eL, eR] ++ [ Add eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Sub eL eR) =
---    [Num 0, eL, eR] ++ [ Sub eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (And eL eR) =
---    [T, F, eL, eR] ++ [ And eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Or eL eR) =
---    [T, F, eL, eR] ++ [ Or eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Not e) = [T, F, e] ++ [ Not e' | e' <- shrink e ]
---  shrink (Cmp c eL eR) =
---    [T, F, eL, eR] ++ [ Cmp c eL' eR' | (eL', eR') <- shrink (eR, eR) ]
---  shrink (If e eT eF) =
---    [eT, eF] ++ [ If e' eT' eF' | (e', eT', eF') <- shrink (e, eT, eF) ]
---  shrink Read = [Num 0]
---
---
---genThing :: Gen Thing
---genThing = sized $ \n -> Thing <$> arbitrary
---
---genExpr :: Map String Type -> Maybe Type -> Gen Expr
---genExpr env ty = sized $ \n -> do
---  traceM $ "\nBlah: " ++ show n ++ "\n"
---  let n' = if n <= 0 then 0 else n-1
---  resize n' (nextGen n)
---
--- where
---   nextGen n =
---     if (n == 0) then
---       case ty of
---         Nothing ->
---           if M.null env then oneof [ boolVals, numVals ]
---           else oneof [ boolVals, numVals, varVals ]
---         Just TBool ->
---           if M.null . M.filter (== TBool) $ env then boolVals
---           else oneof [ boolVals, varVals ]
---         Just TNum ->
---           if M.null . M.filter (== TNum) $ env then numVals
---           else oneof [ numVals, varVals ]
---     else do
---       case ty of
---         Nothing ->
---           if M.null env then
---             oneof
---               [ boolVals, numVals,  binOps, arithOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ boolVals, numVals, varVals, binOps, arithOps, letExpr, ifExpr ]
---         Just TBool ->
---           if M.null . M.filter (== TBool) $ env then
---             oneof
---               [ boolVals, binOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ boolVals, varVals, binOps , letExpr, ifExpr ]
---         Just TNum ->
---           if M.null . M.filter (== TNum) $ env then
---             oneof
---               [ numVals, arithOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ varVals, numVals, arithOps, letExpr, ifExpr ]
---
---   boolVals :: Gen Expr
---   boolVals = oneof [return T, return F]
---
---   numVals :: Gen Expr
---   numVals = frequency
---     [ (5, Num <$> arbitrary)
---     , (1, return Read) ]
---
---   varVals :: Gen Expr
---   varVals = oneof $
---       map (return . Var)
---       . M.keys
---       . M.filter (\t -> case ty of
---                     Nothing -> True
---                     Just TBool -> t == TBool
---                     Just TNum -> t == TNum)
---       $ env
---
---   arithOps :: Gen Expr
---   arithOps = oneof
---     [ Neg <$> genExpr env (Just TNum)
---     , Add <$> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---     , Sub <$> genExpr env (Just TNum) <*> genExpr env (Just TNum) ]
---
---   binOps :: Gen Expr
---   binOps = oneof
---     [ Not <$> genExpr env (Just TBool)
---     , Cmp <$> arbitrary <*> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---     , Or <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---     , And <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---     ]
---
---   ifExpr :: Gen Expr
---   ifExpr = do
---     tyChoice <- oneof [return (Just TBool), return (Just TNum)]
---     let ty' = if ty == Nothing then tyChoice else ty
---     If <$> genExpr env (Just TBool) <*> genExpr env ty' <*> genExpr env ty'
---
---   letExpr :: Gen Expr
---   letExpr = do
---     name <- growingElements (map (:[]) ['a' .. 'z'])
---     ty' <- oneof [return TNum, return TBool]
---     let env' = M.insert name ty' env
---     Let name <$> genExpr env (Just ty') <*> genExpr env' ty
---
---instance Arbitrary Compare where
---  arbitrary = elements [Eq, Lt, Gt, Le, Ge]
+{----- Arbitrary Instances -----}
+
+testArbitrary = sample (arbitrary :: Gen (Program () ()))
+
+instance Arbitrary (Program () ()) where
+  arbitrary = Program () <$> arbitrary
+
+instance Arbitrary (Expr ()) where
+  arbitrary = genExpr M.empty Nothing
+  shrink (Neg e) = [Num 0, e] ++ [ Neg e' | e' <- shrink e ]
+  shrink (Add eL eR) =
+    [Num 0, eL, eR] ++ [ Add eL' eR' | (eL', eR') <- shrink (eL, eR) ]
+  shrink (Sub eL eR) =
+    [Num 0, eL, eR] ++ [ Sub eL' eR' | (eL', eR') <- shrink (eL, eR) ]
+  shrink (And eL eR) =
+    [T, F, eL, eR] ++ [ And eL' eR' | (eL', eR') <- shrink (eL, eR) ]
+  shrink (Or eL eR) =
+    [T, F, eL, eR] ++ [ Or eL' eR' | (eL', eR') <- shrink (eL, eR) ]
+  shrink (Not e) = [T, F, e] ++ [ Not e' | e' <- shrink e ]
+  shrink (Cmp c eL eR) =
+    [T, F, eL, eR] ++ [ Cmp c eL' eR' | (eL', eR') <- shrink (eR, eR) ]
+  shrink (If _ e eT eF) =
+    [eT, eF] ++ [ If () e' eT' eF' | (e', eT', eF') <- shrink (e, eT, eF) ]
+  shrink Read = [Num 0]
+
+
+genExpr :: Map String Type -> Maybe Type -> Gen (Expr ())
+genExpr env ty = sized $ \n -> do
+  let n' = if n <= 0 then 0 else n-1
+  resize n' (nextGen n)
+
+ where
+   nextGen n =
+     if (n == 0) then
+       case ty of
+         Nothing ->
+           if M.null env then oneof [ boolVals, numVals ]
+           else oneof [ boolVals, numVals, varVals ]
+         Just TBool ->
+           if M.null . M.filter (== TBool) $ env then boolVals
+           else oneof [ boolVals, varVals ]
+         Just TNum ->
+           if M.null . M.filter (== TNum) $ env then numVals
+           else oneof [ numVals, varVals ]
+     else do
+       case ty of
+         Nothing ->
+           if M.null env then
+             oneof
+               [ boolVals, numVals,  binOps, arithOps, letExpr, ifExpr ]
+           else
+             oneof
+               [ boolVals, numVals, varVals, binOps, arithOps, letExpr, ifExpr ]
+         Just TBool ->
+           if M.null . M.filter (== TBool) $ env then
+             oneof
+               [ boolVals, binOps, letExpr, ifExpr ]
+           else
+             oneof
+               [ boolVals, varVals, binOps , letExpr, ifExpr ]
+         Just TNum ->
+           if M.null . M.filter (== TNum) $ env then
+             oneof
+               [ numVals, arithOps, letExpr, ifExpr ]
+           else
+             oneof
+               [ varVals, numVals, arithOps, letExpr, ifExpr ]
+
+   boolVals :: Gen (Expr ())
+   boolVals = oneof [return T, return F]
+
+   numVals :: Gen (Expr ())
+   numVals = frequency
+     [ (5, Num <$> arbitrary)
+     , (1, return Read) ]
+
+   varVals :: Gen (Expr ())
+   varVals = oneof $
+       map (return . Var ())
+       . M.keys
+       . M.filter (\t -> case ty of
+                     Nothing -> True
+                     Just TBool -> t == TBool
+                     Just TNum -> t == TNum)
+       $ env
+
+   arithOps :: Gen (Expr ())
+   arithOps = oneof
+     [ Neg <$> genExpr env (Just TNum)
+     , Add <$> genExpr env (Just TNum) <*> genExpr env (Just TNum)
+     , Sub <$> genExpr env (Just TNum) <*> genExpr env (Just TNum) ]
+
+   binOps :: Gen (Expr ())
+   binOps = oneof
+     [ Not <$> genExpr env (Just TBool)
+     , Cmp <$> arbitrary <*> genExpr env (Just TNum) <*> genExpr env (Just TNum)
+     , Or <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
+     , And <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
+     ]
+
+   ifExpr :: Gen (Expr ())
+   ifExpr = do
+     tyChoice <- oneof [return (Just TBool), return (Just TNum)]
+     let ty' = if ty == Nothing then tyChoice else ty
+     If () <$> genExpr env (Just TBool) <*> genExpr env ty' <*> genExpr env ty'
+
+   letExpr :: Gen (Expr ())
+   letExpr = do
+     name <- growingElements (map (:[]) ['a' .. 'z'])
+     ty' <- oneof [return TNum, return TBool]
+     let env' = M.insert name ty' env
+     Let () name <$> genExpr env (Just ty') <*> genExpr env' ty
+
+instance Arbitrary Compare where
+  arbitrary = elements [Eq, Lt, Gt, Le, Ge]

@@ -12,8 +12,6 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Tuple
 
-import Debug.Trace
-
 import qualified R3
 import qualified C2
 import qualified X862 as X2
@@ -21,6 +19,7 @@ import qualified X862 as X2
 import Common
 import Color
 
+compile :: R3.Program () () -> String
 compile =
   prettyPrint
   . patchInstructions
@@ -264,10 +263,7 @@ rcoExpr (R3.If t cond eT eF) = do
   eT' <- rcoExpr eT
   eF' <- rcoExpr eF
   return $ makeBindings bindings (R3.If t cond' eT' eF')
-rcoExpr (R3.Vector t es) = undefined
- -- do
- -- (bindings, es') <- unzip <$> mapM rcoArg es
- -- return $ makeBindings (concat bindings) (R3.Vector t es')
+rcoExpr (R3.Vector _ _) = error $ "rcoExpr called on Vector"
 rcoExpr (R3.VectorRef t v idx) = do
   (bindings, v') <- rcoArg v
   return $ makeBindings bindings (R3.VectorRef t v' idx)
@@ -326,14 +322,7 @@ rcoArg (R3.If t cond eT eF) = do
   eF' <- rcoExpr eF
   n <- fresh
   return (bindings ++ [(n, R3.If t cond' eT' eF')], R3.Var t n)
--- Book doesn't mention anything about rco for vectors, so I'm just doing
-
--- what I think is correct by following a similar pattern as above
-rcoArg (R3.Vector t es) = undefined
- -- do
- -- (binds, es') <- unzip <$>  mapM rcoArg es
- -- n <- fresh
- -- return ((concat binds) ++ [(n, R3.Vector t es')], R3.Var t n)
+rcoArg (R3.Vector _ _) = error "Called rcoArg on Vector"
 rcoArg (R3.VectorRef t v idx) = do
   (bindings, v') <- rcoArg v
   n <- fresh
@@ -432,7 +421,7 @@ ecTail (R3.Sub _ _) =
 ecTail (R3.Not e) = return $ C2.Return (C2.Not (ecArg e))
 ecTail (R3.Cmp cmp eL eR) =
   return $ C2.Return (C2.Cmp (ecCmp cmp) (ecArg eL) (ecArg eR))
-ecTail (R3.Vector _ es) = error "Found Vector in ecTail"
+ecTail (R3.Vector _ _) = error "Found Vector in ecTail"
 ecTail (R3.VectorRef _ v idx) = do
   let v' = ecArg v
   return $ C2.Return (C2.VectorRef v' idx)
@@ -619,7 +608,6 @@ siTail (C2.Return (C2.Cmp cmp aL aR)) =
   , X2.Set (siCompare cmp) (X2.ByteReg Al)
   , X2.Movzbq (X2.ByteReg Al) (X2.Reg Rax)
   , X2.Jmp "conclusion" ]
-siTail (C2.Return (C2.Allocate x ty)) = undefined
 siTail (C2.Return (C2.VectorRef a x)) =
   [ X2.Movq (siArg a) (X2.Reg R11)
   , X2.Movq (X2.Deref R11 (8*(x+1))) (X2.Reg Rax)
@@ -630,6 +618,7 @@ siTail (C2.If cmp aT aF gT gF) =
   [ X2.Cmpq (siArg aF) (siArg aT)
   , X2.JmpIf (siCompare cmp) gT
   , X2.Jmp gF ]
+siTail e = error $ "siTail: " ++ show e
 
 siStmt :: C2.Stmt -> [X2.Instr]
 siStmt (C2.Assign s (C2.Plain a))    =
@@ -683,19 +672,18 @@ siStmt (C2.Collect x) =
   , X2.Callq "collect" ]
 siStmt (C2.Assign s (C2.GlobalValue x)) =
   [ X2.Movq (X2.GlobalValue x) (X2.Var s) ]
-siStmt e = error $ "siStmt: " ++ show e
 
 mkTag :: C2.Type -> Int
 mkTag ty = case ty of
   C2.TVector tys ->
-    (shiftL 7 (ptrMask tys))
-    .|. (shiftL 1 (length tys))
+    (shiftL (ptrMask tys) 7)
+    .|. (shiftL (length tys) 1)
     .|. 1
   _ -> error $ "Trying to make tag of type " ++ show ty
  where ptrMask tys =
-         foldr (\ty acc ->
-                  (shiftL 1 acc)
-                  .|. (case ty of
+         foldr (\ty' acc ->
+                  (shiftL acc 1)
+                  .|. (case ty' of
                          C2.TVector _ -> 1
                          _ -> 0))
                zeroBits tys
@@ -734,7 +722,7 @@ siCompare C2.Lt = X2.CCL
 type LiveSets = [Set X2.Arg]
 
 uncoverLive :: X2.Program (Locals, CFG) -> X2.Program (Locals, LiveSets)
-uncoverLive (X2.Program (locals, cfg) bs) = {- trace (show "\nLiveBefore:\n" ++ printLiveSets bs liveBefore) -} X2.Program (locals, liveSets) bs
+uncoverLive (X2.Program (locals, cfg) bs) = X2.Program (locals, liveSets) bs
  where
    liveSets = concatMap (\(l, _) -> fromJust $ M.lookup l liveAfter) bs
    liveAfter = liveAfterBlocks bs liveBefore
@@ -757,7 +745,7 @@ mkLiveAfters :: Map String [Set X2.Arg]
              -> [X2.Instr]
              -> [Set X2.Arg]
              -> [Set X2.Arg]
-mkLiveAfters liveBefores ((X2.Jmp lbl):is) (s:ss) =
+mkLiveAfters liveBefores ((X2.Jmp lbl):is) (_:ss) =
   if null is then [liveNextBlock]
   else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
  where
@@ -766,7 +754,7 @@ mkLiveAfters liveBefores ((X2.Jmp lbl):is) (s:ss) =
          Nothing -> S.empty
          Just lb -> head lb
 
-mkLiveAfters liveBefores ((X2.JmpIf _ lbl):is) (s:ss) =
+mkLiveAfters liveBefores ((X2.JmpIf _ lbl):is) (_:ss) =
   if null is then [liveNextBlock]
   else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
  where
@@ -775,9 +763,10 @@ mkLiveAfters liveBefores ((X2.JmpIf _ lbl):is) (s:ss) =
          Nothing -> S.empty
          Just lb -> head lb
 
-mkLiveAfters liveBefores (i:is) (_:ss) =
+mkLiveAfters liveBefores (_:is) (_:ss) =
   head ss : mkLiveAfters liveBefores is ss
 mkLiveAfters _ [] [] = []
+mkLiveAfters _ _ _  = error "mkLiveAfters"
 
 liveBeforeBlocks :: [(String, X2.Block)]
                  -> Map String (Set String)
@@ -922,7 +911,7 @@ allocateRegisters (X2.Program (locals, iGraph) bs) = X2.Program locMap bs
 colorGraph :: Locals
            -> Map X2.Arg (Set X2.Arg)
            -> Map String X2.StoreLoc
-colorGraph locals iList = trace (show vectors) $
+colorGraph locals iList =
   M.fromList
   . mapMaybe
       (\(v, c) -> case lookup v vertexAssoc of
@@ -981,8 +970,8 @@ storeLocFromColor vectors var n = case lookup n regIntAssoc of
   Just r -> X2.RegLoc r
   Nothing ->
     if S.member var vectors
-    then X2.RootStack $ negate $ 8 * n - length regIntAssoc
-    else X2.Stack $ negate $ 8 * n - length regIntAssoc
+    then X2.RootStack $ 8 * (n - length regIntAssoc + 1)
+    else X2.Stack $ negate $ 8 * (n - length regIntAssoc)
 
 colorFromReg :: Register -> Maybe Int
 colorFromReg r = lookup r (map swap regIntAssoc)
@@ -1028,12 +1017,12 @@ ahArg m (X2.Var s) = case M.lookup s m of
 ahArg _ a@(X2.Reg _) = a
 ahArg _ a@(X2.Deref _ _) = a
 ahArg _ a@(X2.ByteReg _) = a
+ahArg _ a@(X2.GlobalValue _) = a
 
 frameSize :: M.Map String X2.StoreLoc -> (StackSize, RootStackSize)
-frameSize locMap = trace ("\nrootBytes: " ++ show rootBytes ++ "\nLocMap: " ++ show locMap)
-  (stackBytes, rootBytes)
+frameSize locMap = (stackBytes, rootBytes)
  where
-  rootBytes = foldr (\n acc -> if n < acc then n else acc) 0
+  rootBytes = foldr (\n acc -> if n > acc then n else acc) 0
             . mapMaybe (\x -> case x of
                          (X2.RootStack n) -> Just n
                          _            -> Nothing)
@@ -1128,63 +1117,3 @@ pInstrs (X2.Movzbq l d@(X2.Deref _ _)) =
 
 pInstrs i@(X2.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]
-
-
---{-- End --}
-
-testExpr = "(vector-ref (vector-ref (vector (vector 42)) 0) 0)"
-
-testComp = case R3.parse testExpr of
-  Left _ -> undefined
-  Right x -> putStrLn $ compile x
-
-testThing = case R3.parse testExpr of
-  Left _ -> undefined
-  Right x -> putStrLn . show $
-    --prettyPrint
-    -- . patchInstructions
-    -- . assignHomes
-    -- . allocateRegisters
-    -- . buildInterference
-    -- . uncoverLive
-    -- . selectInstructions
-    -- . removeUnreachable
-    -- . buildCFG
-    explicateControl
-    . collectLocals
-    . rco
-    . exposeAllocation
-    . uniquify
-    . shrink
-    . fromEither
-    . R3.typeCheck
-    $ x
-
-
-
--- Expected:
---
---(program ()
--- (vector-ref
---  (vector-ref
---   (let ((vecinit48
---          (let ((vecinit44 42))
---            (let ((collectret46
---                   (if (<
---                        (+ (global-value free_ptr) 16)
---                        (global-value fromspace_end))
---                     (void)
---                     (collect 16))))
---              (let ((alloc43 (allocate 1 (Vector Integer))))
---                (let ((initret45 (vector-set! alloc43 0 vecinit44)))
---                  alloc43))))))
---     (let ((collectret50
---            (if (< (+ (global-value free_ptr) 16)
---                   (global-value fromspace_end))
---              (void)
---              (collect 16))))
---       (let ((alloc47 (allocate 1 (Vector (Vector Integer)))))
---         (let ((initret49 (vector-set! alloc47 0 vecinit48)))
---           alloc47))))
---   0)
---  0))

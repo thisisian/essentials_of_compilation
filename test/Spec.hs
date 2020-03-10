@@ -18,6 +18,7 @@ import qualified R0
 import qualified R1
 import qualified R2
 import qualified R3
+import qualified R4
 import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 import qualified Chapter4 as Ch4
@@ -28,7 +29,7 @@ main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
   --[ch1Tests, ch2Tests, ch3Tests, ch4Tests, ch5Tests]
-  [ch5Tests]
+  [ch6Tests]
 
 {----- Chapter 1 -----}
 
@@ -218,26 +219,33 @@ ch4TestExprs =
 ch5InterpTest = interpIOTest R3.parse R3.typeCheck R3.interp
 
 ch5CompileTest =
-  compileIOTest R3.parse R3.typeCheck R3.interp conv Ch5.compile
- where conv v = case v of
-         R3.VBool True -> 1
-         R3.VBool False -> 0
-         R3.VNum x -> x `mod` 256
-         R3.VVector _ -> error $ "Interpreter returned vector"
-         R3.VVoid -> 0
+  compileIOTest R3.parse R3.typeCheck R3.interp ch5ConvFunc Ch5.compile
+
+ch5ConvFunc v =
+  case v of
+    R3.VBool True -> 1
+    R3.VBool False -> 0
+    R3.VNum x -> x `mod` 256
+    R3.VVector _ -> error $ "Interpreter returned vector"
+    R3.VVoid -> 0
+
+ch5InterpCompilerEqProp :: TestTree
+ch5InterpCompilerEqProp = testProperty "Check compiler/interpreter equality on random programs" $
+ withMaxSuccess 100 (mapSize (\x -> 4) (property (prop_InterpIOCompilerEquality R3.interp ch5ConvFunc Ch5.compile)))
 
 
 ch5Tests = testGroup "Chapter 5" $
-  [ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
-  , ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
-  , ch5InterpTest (ch5TestExprs !! 2) [] (R3.VNum 42)
-  , ch5InterpTest (ch5TestExprs !! 3) [] (R3.VNum 42)
-  , ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
-  , ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
-  ] ++
+  --[ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
+  --, ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
+  --, ch5InterpTest (ch5TestExprs !! 2) [] (R3.VNum 42)
+  --, ch5InterpTest (ch5TestExprs !! 3) [] (R3.VNum 42)
+  --, ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
+  --, ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
+  --] ++
   --map ch5CompileTest ch2TestExprs ++
   --map ch5CompileTest ch4TestExprs ++
   map ch5CompileTest ch5TestExprs ++
+  [ch5InterpCompilerEqProp] ++
   []
 
 ch5TestExprs =
@@ -247,7 +255,28 @@ ch5TestExprs =
   , "(let ([t (vector 10 20)]) (let ([b (vector-set! t 0 42)]) (vector-ref t 0)))"
   , "(let ([t (vector 42 0)]) (vector-ref t 0))"
   , "(let ([t (vector 42 #t)]) (if (vector-ref t 1) (vector-ref t 0) 99))"
+  , "(vector-ref (vector-ref (vector (vector 42)) 0) 0)"
+  , "(vector-ref (vector-ref (vector-ref (vector (vector 1 (vector 2)) 3 (vector (vector 4) (vector 42))) 2) 1) 0)"
+  , "(let ([t (vector (vector 42) 0)]) (vector-ref (vector-ref t 0) 0))"
+  , "(let ([t (vector (vector 23) 0)]) (let ([nul (vector-set! t 0 (vector 42))]) (vector-ref (vector-ref t 0) 0)))"
   ]
+
+{----- Chapter 6 -----}
+
+
+ch6Tests = testGroup "Chapter 6" $
+  [ parseTest R4.parse (ch6TestExprs !! 0)
+  , parseTest R4.parse (ch6TestExprs !! 1)
+  , parseTest R4.parse (ch6TestExprs !! 2)
+  , parseTest R4.parse (ch6TestExprs !! 3)
+  ]
+
+
+ch6TestExprs =
+  [ "(define (f [x : Integer]) : Integer 1) (f 1)"
+  , "(define (f [x : Integer] [y : Integer]) : Integer 1) (f 1 2)"
+  , "(define (add [x : Integer] [y : Integer]) : Integer (+ x y)) (add 40 2)"
+  , "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)" ]
 
 {----- Generalized Tests -----}
 
@@ -368,6 +397,17 @@ prop_InterpCompilerEquality i c prog = monadicIO $ do
  let interpRes = i ins prog `mod` 256
  return (interpRes == compileRes)
 
+prop_InterpIOCompilerEquality :: (Arbitrary a)
+                            => InterpreterIO a c
+                            -> (c -> Int)
+                            -> Compiler a
+                            -> a
+                            -> Property
+prop_InterpIOCompilerEquality i conv c prog = monadicIO $ do
+ ins <- run (randomInput)
+ compileRes <- run (compileAndRun c ins prog)
+ interpRes <- conv <$> run (i ins prog)
+ return (interpRes == compileRes)
 
 {----- Utilities -----}
 
@@ -406,5 +446,5 @@ withEmptyTempFile :: String -> (FilePath -> IO b) -> IO b
 withEmptyTempFile fp f =
   bracket
     (emptySystemTempFile fp)
-    (\x -> return ())
+    (removeFile)
     f

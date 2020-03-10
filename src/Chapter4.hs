@@ -11,9 +11,6 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Tuple
 
-
-import Debug.Trace
-
 import qualified R2
 import qualified C1
 import qualified X861 as X1
@@ -286,7 +283,7 @@ ecAssign (R2.If cond eT eF) s t = do
   eT' <- ecAssign eT s (C1.Goto lbl)
   eF' <- ecAssign eF s (C1.Goto lbl)
   ecPred cond eT' eF'
-ecAssign a@(R2.Let sIn bE e) sOut t = do
+ecAssign (R2.Let sIn bE e) sOut t = do
   let' <- ecAssign e sOut t
   ecAssign bE sIn let'
 
@@ -483,7 +480,7 @@ mkLiveAfters :: Map String [Set X1.Arg]
              -> [X1.Instr]
              -> [Set X1.Arg]
              -> [Set X1.Arg]
-mkLiveAfters liveBefores ((X1.Jmp lbl):is) (s:ss) =
+mkLiveAfters liveBefores ((X1.Jmp lbl):is) (_:ss) =
   if null is then [liveNextBlock]
   else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
  where
@@ -492,7 +489,7 @@ mkLiveAfters liveBefores ((X1.Jmp lbl):is) (s:ss) =
          Nothing -> S.empty
          Just lb -> head lb
 
-mkLiveAfters liveBefores ((X1.JmpIf _ lbl):is) (s:ss) =
+mkLiveAfters liveBefores ((X1.JmpIf _ lbl):is) (_:ss) =
   if null is then [liveNextBlock]
   else S.union liveNextBlock (head ss) : mkLiveAfters liveBefores is ss
  where
@@ -501,9 +498,12 @@ mkLiveAfters liveBefores ((X1.JmpIf _ lbl):is) (s:ss) =
          Nothing -> S.empty
          Just lb -> head lb
 
-mkLiveAfters liveBefores (i:is) (_:ss) =
+mkLiveAfters liveBefores (_:is) (_:ss) =
   head ss : mkLiveAfters liveBefores is ss
 mkLiveAfters _ [] [] = []
+mkLiveAfters _ i [] = error $ "mkLiveAfters: " ++ show i
+mkLiveAfters _ _ _ = error $ "Mismatch in instructions and sets"
+
 
 liveBeforeBlocks :: [(String, X1.Block)]
                  -> Map String (Set String)
