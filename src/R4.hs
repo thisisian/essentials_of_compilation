@@ -16,10 +16,14 @@ import Text.Parsec (oneOf, letter, alphaNum, parseTest)
 
 import Test.Tasty.QuickCheck
 
+import Debug.Trace
+
 import Text.Parsec (try, many1)
 import qualified Text.Parsec as Parsec (parse)
 
 import Common
+
+type Env a = Map String (Val a)
 
 data Program b a = Program b [Def a] (Expr a)
 
@@ -45,8 +49,7 @@ data Expr a
   | Collect Int
   | Allocate Int Type
   | GlobalValue String
-  | App (Expr a) [Expr a]
-
+  | App a (Expr a) [Expr a]
 
 data Def a = Define String [(String, Type)] Type (Expr a)
 
@@ -56,19 +59,22 @@ data Compare = Eq | Lt | Le | Gt | Ge
 data Type = TBool | TNum | TVector [Type] | TVoid | TFunc [Type] Type
   deriving Eq
 
-data Val = VBool Bool | VNum Int | VVector (MV.IOVector Val) | VVoid
+data Val a = VBool Bool | VNum Int | VVector (MV.IOVector (Val a)) | VVoid
+           | VLambda [String] (Expr a) (Env a)
 
-instance Eq Val where
+instance Eq (Val a) where
   (==) (VBool b1) (VBool b2) = b1 == b2
   (==) (VNum x) (VNum y) = x == y
   (==) VVoid VVoid = True
   (==) _ _ = False
 
-instance Show Val where
+instance Show (Val a) where
   show (VBool b) = show b
   show (VNum x) = show x
   show (VVector _) = "[Vector]"
   show (VVoid) = "void"
+  show (VLambda args body env) = "lambda args:" ++ show args ++ " body: " ++
+    show body ++ " env: " ++ show env
 
 {----- Show Instances -----}
 
@@ -105,7 +111,7 @@ instance Show (Expr a) where
   show (Collect x) = "(collect " ++ show x ++ ")"
   show (Allocate x ty) = "(allocate " ++ show x ++ " " ++ show ty ++ ")"
   show (GlobalValue s) = "(global-value " ++ s ++ ")"
-  show (App e eArgs) = "(" ++ show e ++ " " ++ (intercalate " " (map show eArgs)) ++ ")"
+  show (App _ e eArgs) = "(" ++ show e ++ " " ++ (intercalate " " (map show eArgs)) ++ ")"
 
 instance Show Compare where
   show Eq = "eq?"
@@ -157,7 +163,7 @@ pExpr = pNum <|> pVar <|> pTrue <|> pFalse <|> pParens pExpr'
       <|> pReserved "vector-set!" *> (VectorSet <$> pExpr <*> pInt <*> pExpr)
       <|> pReserved "vector" *> (Vector () <$> many pExpr)
       <|> pReserved "void" *> return Void
-      <|> App <$> pExpr <*> many1 pExpr
+      <|> App () <$> pExpr <*> many1 pExpr
 
 pCmp = pReservedOp "eq?" *> return Eq
      <|> pReservedOp "<" *> return Lt
@@ -226,7 +232,7 @@ TokenParser { parens = pParens
 
 def = emptyDef { commentLine = ";;"
                , identStart = letter
-               , identLetter = alphaNum <|> oneOf "-"
+               , identLetter = alphaNum <|> oneOf "-'"
                , opStart = oneOf "+-<>e:"
                , opLetter = oneOf "+-<>=eq?:"
                , reservedNames = ["read", "let", "#t", "#f"
@@ -239,15 +245,19 @@ def = emptyDef { commentLine = ";;"
 
 {----- Interpreter -----}
 
-data Env a = Env { varMap :: Map String Val, funcMap :: Map String (Def  a) }
+interp :: [Int] -> (Program b a) -> IO (Val a)
+interp inputs (Program _ ds e) = evalStateT (interpExpr topLevelEnv e) inputs
+ where topLevelEnv =
+         M.map (\(VLambda args body _) -> VLambda args body topLevelEnv')
+         topLevelEnv'
 
-interp :: [Int] -> (Program b a) -> IO (Val)
-interp inputs (Program _ ds e) = evalStateT (interpExpr M.empty e) inputs
- where defMap = M.fromList . map (\d@(Define s _ _ _) -> (s, d)) ds
+        where topLevelEnv' =
+                M.fromList
+                . map (\(Define s args _ body) ->
+                       (s, VLambda (map fst args) body M.empty))
+                $ ds
 
-
-
-interpExpr :: Env a -> (Expr a) -> StateT [Int] IO Val
+interpExpr :: (Env a) -> (Expr a) -> StateT [Int] IO (Val a)
 interpExpr _ (Num x) = return $ VNum x
 interpExpr _ Read = do
   x <- nextInput
@@ -302,27 +312,30 @@ interpExpr env (VectorSet vec idx val) = do
   liftIO (MV.write refVs idx val')
   return (VVoid)
 interpExpr _ (Void) = return (VVoid)
-interpExpr _ (Collect _) = undefined
-interpExpr _ (Allocate _ _) = undefined
-interpExpr _ (GlobalValue _) = undefined
+interpExpr env (App _ e es) = do
+  ~(VLambda args body lEnv) <- interpExpr env e
+  argEnv <- M.fromList . zip args <$> mapM (interpExpr env) es
+  let env' = M.union argEnv (M.union lEnv env)
+  interpExpr env' body
+interpExpr _ _ = undefined
 
 interpBinArithOp
-  :: Env a
+  :: (Env a)
   -> (Int -> Int -> Int)
   -> Expr a
   -> Expr a
-  -> StateT [Int] IO Val
+  -> StateT [Int] IO (Val a)
 interpBinArithOp env op eL eR = do
   ~(VNum x) <- interpExpr env eL
   ~(VNum y) <- interpExpr env eR
   return $ VNum (x `op` y)
 
 interpBinCmpOp
-  :: Env a
+  :: (Env a)
   -> (Int -> Int -> Bool)
   -> Expr a
   -> Expr a
-  -> StateT [Int] IO Val
+  -> StateT [Int] IO (Val a)
 interpBinCmpOp env op eL eR = do
   ~(VNum vL) <- interpExpr env eL
   ~(VNum vR) <- interpExpr env eR
@@ -350,245 +363,166 @@ mkNewVector as = do
    traverse_ (\(i, a) -> MV.write mV i a) as'
    return mV
 
---{----- Type Checker -----}
---
---getType :: Expr Type -> Type
---getType (Num _) = TNum
---getType Read = TNum
---getType (Neg _) = TNum
---getType (Add _ _) = TNum
---getType (Sub _ _) = TNum
---getType (Var t _) = t
---getType (Let t _ _ _) = t
---getType T = TBool
---getType F = TBool
---getType (And _ _) = TBool
---getType (Or _ _) = TBool
---getType (Not _) = TBool
---getType (Cmp _ _ _) = TBool
---getType (If t _ _ _) = t
---getType (Vector t _) = t
---getType (VectorRef t _ _) = t
---getType (VectorSet _ _ _) = TVoid
---getType Void = TVoid
---getType (Collect _) = TVoid
---getType (Allocate _ _) = TVoid
---getType (GlobalValue _) = TNum
---
---typeCheck :: Program () () -> Either TypeError (Program () Type)
---typeCheck (Program _ e) = Program () <$> typeChkExpr M.empty e
---
---typeChkExpr :: Map String Type -> Expr () -> Either TypeError (Expr Type)
---typeChkExpr _ (Num x) = return (Num x)
---typeChkExpr _ Read  = return Read
---typeChkExpr env (Neg e) = do
---  e' <- typeChkUniOp TNum env e
---  return $ Neg e'
---typeChkExpr env (Add eL eR) = do
---  (eL', eR') <- typeChkBinOp TNum env eL eR
---  return $ Add eL' eR'
---typeChkExpr env (Sub eL eR) = do
---  (eL', eR') <- typeChkBinOp TNum env eL eR
---  return $ Sub eL' eR'
---typeChkExpr env (Var _ s) = case M.lookup s env of
---  Just t -> Right (Var t s)
---  Nothing -> Left . TypeError $ "Failed to find binding for " ++ s
---typeChkExpr env (Let _ s bE e) = do
---  bE' <- typeChkExpr env bE
---  let env' = M.insert s (getType bE') env
---  e' <- typeChkExpr env' e
---  return $ Let (getType e') s bE' e'
---typeChkExpr _ T = return T
---typeChkExpr _ F = return F
---typeChkExpr env (And eL eR) = do
---  (eL', eR') <- typeChkBinOp TBool env eL eR
---  return $ And eL' eR'
---typeChkExpr env (Or eL eR) = do
---  (eL', eR') <- typeChkBinOp TBool env eL eR
---  return $ Or eL' eR'
---typeChkExpr env (Not e) = do
---  e' <- typeChkUniOp TBool env e
---  return $ Not e'
---typeChkExpr env (Cmp c eL eR) = do
---  (eL', eR') <- typeChkBinOp TNum env eL eR
---  return $ (Cmp c eL' eR')
---typeChkExpr env (If _ cond eT eF) = do
---  cond' <- typeChkExpr env cond
---  case getType cond' of
---    TBool -> do
---      eT' <- typeChkExpr env eT
---      eF' <- typeChkExpr env eF
---      let truTy = getType eT'
---          falTy = getType eF'
---      if truTy == falTy
---        then Right (If truTy cond' eT' eF')
---        else Left . TypeError $ "Branches of If expression don't match. Got " ++
---          show truTy ++ " and " ++ show falTy
---    t -> Left . TypeError  $ "Test of If expression is of type " ++ show t
---typeChkExpr env (Vector _ es) = do
---  es' <- mapM (typeChkExpr env) es
---  let tys = map getType es'
---  return $ Vector (TVector tys) es'
---typeChkExpr env (VectorRef _ e idx) = do
---  e' <- typeChkExpr env e
---  case getType e' of
---    TVector ts ->
---      let ty = ts !! idx
---      in return $ (VectorRef ty e' idx)
---    ty -> Left . TypeError $ "TypeRef expects a vector type, but got " ++ show ty
---typeChkExpr env (VectorSet eV idx eSet) =do
---  eV' <- typeChkExpr env eV
---  case getType eV' of
---    TVector ts -> do
---      let ty = ts !! idx
---      eSet' <- typeChkExpr env eSet
---      let setTy = getType eSet'
---      if setTy == ty
---        then return $ VectorSet eV' idx eSet'
---        else Left . TypeError $ "VectorSet expected type " ++ show ty ++
---             " but got " ++ show setTy
---    ty -> Left . TypeError $ "VectorSet expects vector type, but got " ++ show ty
---
---
---typeChkExpr _ Void = return Void
---typeChkExpr _ (Collect a) = return (Collect a)
---typeChkExpr _ (Allocate a b) = return (Allocate a b)
---typeChkExpr _ (GlobalValue a) = return (GlobalValue a)
---
---typeChkUniOp :: Type -> Map String Type
---             -> Expr () -> Either TypeError (Expr Type)
---typeChkUniOp argTy env e = do
---  e' <- typeChkExpr env e
---  let ty = getType e'
---  if ty == argTy
---   then Right $ e'
---   else Left . TypeError $ "Unary op expected " ++ show argTy ++
---         " but got " ++ show ty
---
---typeChkBinOp :: Type -> Map String Type -> Expr () -> Expr ()
---             -> Either TypeError (Expr Type, Expr Type)
---typeChkBinOp argTy env eL eR = do
---  eL' <- typeChkExpr env eL
---  eR' <- typeChkExpr env eR
---  let (tL, tR) = (getType eL', getType eR')
---  if (tL, tR) == (argTy, argTy)
---    then Right (eL', eR')
---    else Left . TypeError $ "BinOp expected " ++ show argTy ++ " and " ++
---      show argTy ++ " but got " ++ show tL ++
---      " and " ++ show tR
---
---{----- Arbitrary Instances -----}
---
---testArbitrary = sample (arbitrary :: Gen (Program () ()))
---
---instance Arbitrary (Program () ()) where
---  arbitrary = Program () <$> arbitrary
---
---instance Arbitrary (Expr ()) where
---  arbitrary = genExpr M.empty Nothing
---  shrink (Neg e) = [Num 0, e] ++ [ Neg e' | e' <- shrink e ]
---  shrink (Add eL eR) =
---    [Num 0, eL, eR] ++ [ Add eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Sub eL eR) =
---    [Num 0, eL, eR] ++ [ Sub eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (And eL eR) =
---    [T, F, eL, eR] ++ [ And eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Or eL eR) =
---    [T, F, eL, eR] ++ [ Or eL' eR' | (eL', eR') <- shrink (eL, eR) ]
---  shrink (Not e) = [T, F, e] ++ [ Not e' | e' <- shrink e ]
---  shrink (Cmp c eL eR) =
---    [T, F, eL, eR] ++ [ Cmp c eL' eR' | (eL', eR') <- shrink (eR, eR) ]
---  shrink (If _ e eT eF) =
---    [eT, eF] ++ [ If () e' eT' eF' | (e', eT', eF') <- shrink (e, eT, eF) ]
---  shrink Read = [Num 0]
---
---
---genExpr :: Map String Type -> Maybe Type -> Gen (Expr ())
---genExpr env ty = sized $ \n -> do
---  let n' = if n <= 0 then 0 else n-1
---  resize n' (nextGen n)
---
--- where
---   nextGen n =
---     if (n == 0) then
---       case ty of
---         Nothing ->
---           if M.null env then oneof [ boolVals, numVals ]
---           else oneof [ boolVals, numVals, varVals ]
---         Just TBool ->
---           if M.null . M.filter (== TBool) $ env then boolVals
---           else oneof [ boolVals, varVals ]
---         Just TNum ->
---           if M.null . M.filter (== TNum) $ env then numVals
---           else oneof [ numVals, varVals ]
---     else do
---       case ty of
---         Nothing ->
---           if M.null env then
---             oneof
---               [ boolVals, numVals,  binOps, arithOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ boolVals, numVals, varVals, binOps, arithOps, letExpr, ifExpr ]
---         Just TBool ->
---           if M.null . M.filter (== TBool) $ env then
---             oneof
---               [ boolVals, binOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ boolVals, varVals, binOps , letExpr, ifExpr ]
---         Just TNum ->
---           if M.null . M.filter (== TNum) $ env then
---             oneof
---               [ numVals, arithOps, letExpr, ifExpr ]
---           else
---             oneof
---               [ varVals, numVals, arithOps, letExpr, ifExpr ]
---
---   boolVals :: Gen (Expr ())
---   boolVals = oneof [return T, return F]
---
---   numVals :: Gen (Expr ())
---   numVals = frequency
---     [ (5, Num <$> arbitrary)
---     , (1, return Read) ]
---
---   varVals :: Gen (Expr ())
---   varVals = oneof $
---       map (return . Var ())
---       . M.keys
---       . M.filter (\t -> case ty of
---                     Nothing -> True
---                     Just TBool -> t == TBool
---                     Just TNum -> t == TNum)
---       $ env
---
---   arithOps :: Gen (Expr ())
---   arithOps = oneof
---     [ Neg <$> genExpr env (Just TNum)
---     , Add <$> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---     , Sub <$> genExpr env (Just TNum) <*> genExpr env (Just TNum) ]
---
---   binOps :: Gen (Expr ())
---   binOps = oneof
---     [ Not <$> genExpr env (Just TBool)
---     , Cmp <$> arbitrary <*> genExpr env (Just TNum) <*> genExpr env (Just TNum)
---     , Or <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---     , And <$> genExpr env (Just TBool) <*> genExpr env (Just TBool)
---     ]
---
---   ifExpr :: Gen (Expr ())
---   ifExpr = do
---     tyChoice <- oneof [return (Just TBool), return (Just TNum)]
---     let ty' = if ty == Nothing then tyChoice else ty
---     If () <$> genExpr env (Just TBool) <*> genExpr env ty' <*> genExpr env ty'
---
---   letExpr :: Gen (Expr ())
---   letExpr = do
---     name <- growingElements (map (:[]) ['a' .. 'z'])
---     ty' <- oneof [return TNum, return TBool]
---     let env' = M.insert name ty' env
---     Let () name <$> genExpr env (Just ty') <*> genExpr env' ty
---
---instance Arbitrary Compare where
---  arbitrary = elements [Eq, Lt, Gt, Le, Ge]
+--{----- Type Checker -----} --
+getType :: Expr Type -> Type
+getType (Num _) = TNum
+getType Read = TNum
+getType (Neg _) = TNum
+getType (Add _ _) = TNum
+getType (Sub _ _) = TNum
+getType (Var t _) = t
+getType (Let t _ _ _) = t
+getType T = TBool
+getType F = TBool
+getType (And _ _) = TBool
+getType (Or _ _) = TBool
+getType (Not _) = TBool
+getType (Cmp _ _ _) = TBool
+getType (If t _ _ _) = t
+getType (Vector t _) = t
+getType (VectorRef t _ _) = t
+getType (VectorSet _ _ _) = TVoid
+getType Void = TVoid
+getType (Collect _) = TVoid
+getType (Allocate _ _) = TVoid
+getType (GlobalValue _) = TNum
+getType (App t _ _) = t
+
+typeCheck :: Program () () -> Either TypeError (Program () Type)
+typeCheck (Program _ ds e) = do
+  traceShowM topLevel
+  ds' <- traverse (typeChkDef topLevel) ds
+  Program () ds' <$> typeChkExpr topLevel e
+ where topLevel = M.fromList . map (\(Define s argTys retTy _) ->
+                                      (s, TFunc (map snd argTys) retTy)) $ ds
+
+typeChkDef :: Map String Type -> Def () -> Either TypeError (Def Type)
+typeChkDef env (Define s argTys retTy e) = do
+  e' <- typeChkExpr (M.union (M.fromList argTys) env) e
+  let ty = getType e'
+  if ty == retTy
+    then Right (Define s argTys retTy e')
+    else Left (TypeError $ "Typecheck of function " ++ s ++
+               " failed. Expected " ++ show retTy ++ " but got " ++
+               show ty)
+
+typeChkExpr :: Map String Type -> Expr () -> Either TypeError (Expr Type)
+typeChkExpr _ (Num x) = return (Num x)
+typeChkExpr _ Read  = return Read
+typeChkExpr env (Neg e) = do
+  e' <- typeChkUniOp TNum env e
+  return $ Neg e'
+typeChkExpr env (Add eL eR) = do
+  (eL', eR') <- typeChkBinOp TNum env eL eR
+  return $ Add eL' eR'
+typeChkExpr env (Sub eL eR) = do
+  (eL', eR') <- typeChkBinOp TNum env eL eR
+  return $ Sub eL' eR'
+typeChkExpr env (Var _ s) = case M.lookup s env of
+  Just t -> Right (Var t s)
+  Nothing -> Left . TypeError $ "Failed to find binding for " ++ s ++ "\n" ++ show env
+typeChkExpr env (Let _ s bE e) = do
+  bE' <- typeChkExpr env bE
+  let env' = M.insert s (getType bE') env
+  e' <- typeChkExpr env' e
+  return $ Let (getType e') s bE' e'
+typeChkExpr _ T = return T
+typeChkExpr _ F = return F
+typeChkExpr env (And eL eR) = do
+  (eL', eR') <- typeChkBinOp TBool env eL eR
+  return $ And eL' eR'
+typeChkExpr env (Or eL eR) = do
+  (eL', eR') <- typeChkBinOp TBool env eL eR
+  return $ Or eL' eR'
+typeChkExpr env (Not e) = do
+  e' <- typeChkUniOp TBool env e
+  return $ Not e'
+typeChkExpr env (Cmp c eL eR) = do
+  (eL', eR') <- typeChkBinOp TNum env eL eR
+  return $ (Cmp c eL' eR')
+typeChkExpr env (If _ cond eT eF) = do
+  cond' <- typeChkExpr env cond
+  case getType cond' of
+    TBool -> do
+      eT' <- typeChkExpr env eT
+      eF' <- typeChkExpr env eF
+      let truTy = getType eT'
+          falTy = getType eF'
+      if truTy == falTy
+        then Right (If truTy cond' eT' eF')
+        else Left . TypeError $ "Branches of If expression don't match. Got " ++
+          show truTy ++ " and " ++ show falTy
+    t -> Left . TypeError  $ "Test of If expression is of type " ++ show t
+typeChkExpr env (Vector _ es) = do
+  es' <- mapM (typeChkExpr env) es
+  let tys = map getType es'
+  return $ Vector (TVector tys) es'
+typeChkExpr env (VectorRef _ e idx) = do
+  e' <- typeChkExpr env e
+  case getType e' of
+    TVector ts ->
+      let ty = ts !! idx
+      in return $ (VectorRef ty e' idx)
+    ty -> Left . TypeError $ "TypeRef expects a vector type, but got " ++ show ty
+typeChkExpr env (VectorSet eV idx eSet) =do
+  eV' <- typeChkExpr env eV
+  case getType eV' of
+    TVector ts -> do
+      let ty = ts !! idx
+      eSet' <- typeChkExpr env eSet
+      let setTy = getType eSet'
+      if setTy == ty
+        then return $ VectorSet eV' idx eSet'
+        else Left . TypeError $ "VectorSet expected type " ++ show ty ++
+             " but got " ++ show setTy
+    ty -> Left . TypeError $ "VectorSet expects vector type, but got " ++ show ty
+typeChkExpr env (App _ fe args) = do
+  traceM ("Env: " ++ show env)
+  fe' <- typeChkExpr env fe
+  case getType fe' of
+    (TFunc argTys retTy) -> do
+      args' <- mapM (typeChkExpr env) args
+      let arg'Tys = map getType args'
+      if arg'Tys == argTys
+        then Right (App retTy fe' args')
+        else Left . TypeError $ "Failed to typecheck App"
+    _ -> Left . TypeError $ "Argument to App is not a function type"
+
+typeChkExpr _ Void = return Void
+typeChkExpr _ (Collect a) = return (Collect a)
+typeChkExpr _ (Allocate a b) = return (Allocate a b)
+typeChkExpr _ (GlobalValue a) = return (GlobalValue a)
+
+typeChkUniOp :: Type -> Map String Type
+             -> Expr () -> Either TypeError (Expr Type)
+typeChkUniOp argTy env e = do
+  e' <- typeChkExpr env e
+  let ty = getType e'
+  if ty == argTy
+   then Right $ e'
+   else Left . TypeError $ "Unary op expected " ++ show argTy ++
+         " but got " ++ show ty
+
+typeChkBinOp :: Type -> Map String Type -> Expr () -> Expr ()
+             -> Either TypeError (Expr Type, Expr Type)
+typeChkBinOp argTy env eL eR = do
+  eL' <- typeChkExpr env eL
+  eR' <- typeChkExpr env eR
+  let (tL, tR) = (getType eL', getType eR')
+  if (tL, tR) == (argTy, argTy)
+    then Right (eL', eR')
+    else Left . TypeError $ "BinOp expected " ++ show argTy ++ " and " ++
+      show argTy ++ " but got " ++ show tL ++
+      " and " ++ show tR
+
+--- End ---
+
+testCode = "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)"
+
+testThing code = do
+  let p = parseError code
+  let ty = typeCheck p
+  res <- interp [] p
+  putStrLn (show ty)
+
+thing = "(define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1)) (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer (if (cmp eq? ct 0) n-2 (nth-fib' (- ct 1) n-1 (+ n-2 n-1)))) (nth-fib 8)"

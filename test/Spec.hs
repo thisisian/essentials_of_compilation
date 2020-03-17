@@ -263,12 +263,19 @@ ch5TestExprs =
 
 {----- Chapter 6 -----}
 
+ch6InterpTest = interpIOTest R4.parse R4.typeCheck R4.interp
 
 ch6Tests = testGroup "Chapter 6" $
   [ parseTest R4.parse (ch6TestExprs !! 0)
   , parseTest R4.parse (ch6TestExprs !! 1)
   , parseTest R4.parse (ch6TestExprs !! 2)
   , parseTest R4.parse (ch6TestExprs !! 3)
+  , parseTest R4.parse (ch6TestExprs !! 4)
+  , ch6InterpTest (ch6TestExprs !! 0) [] (R4.VNum 1)
+  , ch6InterpTest (ch6TestExprs !! 1) [] (R4.VNum 1)
+  , ch6InterpTest (ch6TestExprs !! 2) [] (R4.VNum 42)
+  , ch6InterpTest (ch6TestExprs !! 3) [] (R4.VNum 42)
+  , ch6InterpTest (ch6TestExprs !! 4) [] (R4.VNum 21)
   ]
 
 
@@ -276,7 +283,16 @@ ch6TestExprs =
   [ "(define (f [x : Integer]) : Integer 1) (f 1)"
   , "(define (f [x : Integer] [y : Integer]) : Integer 1) (f 1 2)"
   , "(define (add [x : Integer] [y : Integer]) : Integer (+ x y)) (add 40 2)"
-  , "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)" ]
+  , "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)"
+  , "(define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1)) (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer (if (cmp eq? ct 0) n-2 (nth-fib' (- ct 1) n-1 (+ n-2 n-1)))) (nth-fib 8)"
+  ]
+
+-- (define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1))
+-- (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer
+--   (if (eq? ct 0)
+--     n-1
+--     (nthfib' (ct-1) n-1 (n-2 + n-1))))
+-- (nth-fib 8)
 
 {----- Generalized Tests -----}
 
