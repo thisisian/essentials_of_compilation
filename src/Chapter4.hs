@@ -801,3 +801,9 @@ pInstrs (X1.Movzbq l d@(X1.Deref _ _)) =
 
 pInstrs i@(X1.Movq a1 a2) = [i | a1 /= a2]
 pInstrs i = [i]
+
+
+-- End --
+ch4testExpr = "(if (and #t #f) #f (cmp <= 2 3))"
+
+ch4testCompile e = compileToFile R2.parse compile e "./testComp"

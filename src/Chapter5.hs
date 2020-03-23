@@ -40,7 +40,7 @@ compile =
   . R3.typeCheck
 
 {----- Shrink -----}
---
+
 shrink :: R3.Program () R3.Type -> R3.Program () R3.Type
 shrink (R3.Program () e) = R3.Program () (shrinkExpr e)
 

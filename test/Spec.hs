@@ -23,12 +23,13 @@ import qualified Chapter2 as Ch2
 import qualified Chapter3 as Ch3
 import qualified Chapter4 as Ch4
 import qualified Chapter5 as Ch5
+import qualified Chapter6 as Ch6
 
 main :: IO ()
 main = defaultMain
   $ localOption (Quiet True)
   $ testGroup "Essentials Of Compilation" $
-  --[ch1Tests, ch2Tests, ch3Tests, ch4Tests, ch5Tests]
+  [ch1Tests, ch2Tests, ch3Tests, ch4Tests, ch5Tests] ++
   [ch6Tests]
 
 {----- Chapter 1 -----}
@@ -235,15 +236,15 @@ ch5InterpCompilerEqProp = testProperty "Check compiler/interpreter equality on r
 
 
 ch5Tests = testGroup "Chapter 5" $
-  --[ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
-  --, ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
-  --, ch5InterpTest (ch5TestExprs !! 2) [] (R3.VNum 42)
-  --, ch5InterpTest (ch5TestExprs !! 3) [] (R3.VNum 42)
-  --, ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
-  --, ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
-  --] ++
-  --map ch5CompileTest ch2TestExprs ++
-  --map ch5CompileTest ch4TestExprs ++
+  [ ch5InterpTest (ch5TestExprs !! 0) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 1) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 2) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 3) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 4) [] (R3.VNum 42)
+  , ch5InterpTest (ch5TestExprs !! 5) [] (R3.VNum 42)
+  ] ++
+  map ch5CompileTest ch2TestExprs ++
+  map ch5CompileTest ch4TestExprs ++
   map ch5CompileTest ch5TestExprs ++
   [ch5InterpCompilerEqProp] ++
   []
@@ -265,6 +266,17 @@ ch5TestExprs =
 
 ch6InterpTest = interpIOTest R4.parse R4.typeCheck R4.interp
 
+ch6CompileTest =
+  compileIOTest R4.parse R4.typeCheck R4.interp ch6ConvFunc Ch6.compile
+
+ch6ConvFunc v =
+  case v of
+    R4.VBool True -> 1
+    R4.VBool False -> 0
+    R4.VNum x -> x `mod` 256
+    R4.VVector _ -> error $ "Interpreter returned vector"
+    R4.VVoid -> 0
+
 ch6Tests = testGroup "Chapter 6" $
   [ parseTest R4.parse (ch6TestExprs !! 0)
   , parseTest R4.parse (ch6TestExprs !! 1)
@@ -276,23 +288,21 @@ ch6Tests = testGroup "Chapter 6" $
   , ch6InterpTest (ch6TestExprs !! 2) [] (R4.VNum 42)
   , ch6InterpTest (ch6TestExprs !! 3) [] (R4.VNum 42)
   , ch6InterpTest (ch6TestExprs !! 4) [] (R4.VNum 21)
-  ]
+  ] ++
+  map ch6CompileTest ch2TestExprs ++
+  map ch6CompileTest ch4TestExprs ++
+  map ch6CompileTest ch5TestExprs ++
+  map ch6CompileTest ch6TestExprs
+
 
 
 ch6TestExprs =
   [ "(define (f [x : Integer]) : Integer 1) (f 1)"
   , "(define (f [x : Integer] [y : Integer]) : Integer 1) (f 1 2)"
   , "(define (add [x : Integer] [y : Integer]) : Integer (+ x y)) (add 40 2)"
-  , "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)"
-  , "(define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1)) (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer (if (cmp eq? ct 0) n-2 (nth-fib' (- ct 1) n-1 (+ n-2 n-1)))) (nth-fib 8)"
+  , "(define (mapvec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (mapvec add1 (vector 0 41)) 1)"
+  , "(define (nthfib [ct : Integer]) : Integer (nthfibp ct 0 1)) (define (nthfibp [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer (if (cmp eq? ct 0) n-2 (nthfibp (- ct 1) n-1 (+ n-2 n-1)))) (nthfib 8)"
   ]
-
--- (define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1))
--- (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer
---   (if (eq? ct 0)
---     n-1
---     (nthfib' (ct-1) n-1 (n-2 + n-1))))
--- (nth-fib 8)
 
 {----- Generalized Tests -----}
 

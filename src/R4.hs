@@ -16,8 +16,6 @@ import Text.Parsec (oneOf, letter, alphaNum, parseTest)
 
 import Test.Tasty.QuickCheck
 
-import Debug.Trace
-
 import Text.Parsec (try, many1)
 import qualified Text.Parsec as Parsec (parse)
 
@@ -25,7 +23,7 @@ import Common
 
 type Env a = Map String (Val a)
 
-data Program b a = Program b [Def a] (Expr a)
+data Program b a c = Program b [Def a c] (Expr a)
 
 data Expr a
   = Num Int
@@ -50,8 +48,9 @@ data Expr a
   | Allocate Int Type
   | GlobalValue String
   | App a (Expr a) [Expr a]
+  | FunRef a String
 
-data Def a = Define String [(String, Type)] Type (Expr a)
+data Def a b = Define String [(String, Type)] Type b (Expr a)
 
 data Compare = Eq | Lt | Le | Gt | Ge
   deriving Eq
@@ -78,7 +77,7 @@ instance Show (Val a) where
 
 {----- Show Instances -----}
 
-instance (Show b) => Show (Program b a) where
+instance (Show b) => Show (Program b a c) where
   show (Program i d e) = intercalate " " (map show d) ++ " " ++ show e
 --"(program " ++ show i ++ "\n" ++ show d ++ "\n" ++ show e ++ ")"
 
@@ -128,8 +127,8 @@ instance Show Type where
   show (TFunc argTys retTy) =
     "(" ++ intercalate " " (map show argTys) ++ " -> " ++ show retTy ++ ")"
 
-instance Show (Def a) where
-  show (Define fname varTys retTy e) = "(define (" ++ fname ++ " " ++ showVT varTys ++ ") : " ++ show retTy ++ " " ++ show e ++ ")"
+instance Show (Def a b) where
+  show (Define fname varTys retTy _ e) = "(define (" ++ fname ++ " " ++ showVT varTys ++ ") : " ++ show retTy ++ " " ++ show e ++ ")"
    where
     showVT ts =
       intercalate " " (map (\(s, ty) -> "[" ++ s ++ " : " ++ show ty ++ "]") ts)
@@ -140,7 +139,7 @@ instance Show (Def a) where
 
 parse = Parsec.parse pProgram ""
 
-parseError :: String -> (Program () ())
+parseError :: String -> (Program () () ())
 parseError s = case Parsec.parse pProgram "" s of
   Left e -> error $ show e
   Right s' -> s'
@@ -194,7 +193,7 @@ pDef =
     pReservedOp ":"
     retTy <- pType
     expr <- pExpr
-    return $ Define fname varTys retTy expr
+    return $ Define fname varTys retTy () expr
 
  where
   varTypeBind =
@@ -245,7 +244,7 @@ def = emptyDef { commentLine = ";;"
 
 {----- Interpreter -----}
 
-interp :: [Int] -> (Program b a) -> IO (Val a)
+interp :: [Int] -> (Program b a c) -> IO (Val a)
 interp inputs (Program _ ds e) = evalStateT (interpExpr topLevelEnv e) inputs
  where topLevelEnv =
          M.map (\(VLambda args body _) -> VLambda args body topLevelEnv')
@@ -253,7 +252,7 @@ interp inputs (Program _ ds e) = evalStateT (interpExpr topLevelEnv e) inputs
 
         where topLevelEnv' =
                 M.fromList
-                . map (\(Define s args _ body) ->
+                . map (\(Define s args _ _ body) ->
                        (s, VLambda (map fst args) body M.empty))
                 $ ds
 
@@ -387,21 +386,22 @@ getType (Collect _) = TVoid
 getType (Allocate _ _) = TVoid
 getType (GlobalValue _) = TNum
 getType (App t _ _) = t
+getType (FunRef t _) = t
 
-typeCheck :: Program () () -> Either TypeError (Program () Type)
+
+typeCheck :: Program () () () -> Either TypeError (Program () Type ())
 typeCheck (Program _ ds e) = do
-  traceShowM topLevel
   ds' <- traverse (typeChkDef topLevel) ds
   Program () ds' <$> typeChkExpr topLevel e
- where topLevel = M.fromList . map (\(Define s argTys retTy _) ->
+ where topLevel = M.fromList . map (\(Define s argTys retTy _ _) ->
                                       (s, TFunc (map snd argTys) retTy)) $ ds
 
-typeChkDef :: Map String Type -> Def () -> Either TypeError (Def Type)
-typeChkDef env (Define s argTys retTy e) = do
+typeChkDef :: Map String Type -> Def () () -> Either TypeError (Def Type ())
+typeChkDef env (Define s argTys retTy () e) = do
   e' <- typeChkExpr (M.union (M.fromList argTys) env) e
   let ty = getType e'
   if ty == retTy
-    then Right (Define s argTys retTy e')
+    then Right (Define s argTys retTy () e')
     else Left (TypeError $ "Typecheck of function " ++ s ++
                " failed. Expected " ++ show retTy ++ " but got " ++
                show ty)
@@ -477,7 +477,6 @@ typeChkExpr env (VectorSet eV idx eSet) =do
              " but got " ++ show setTy
     ty -> Left . TypeError $ "VectorSet expects vector type, but got " ++ show ty
 typeChkExpr env (App _ fe args) = do
-  traceM ("Env: " ++ show env)
   fe' <- typeChkExpr env fe
   case getType fe' of
     (TFunc argTys retTy) -> do
@@ -514,15 +513,3 @@ typeChkBinOp argTy env eL eR = do
     else Left . TypeError $ "BinOp expected " ++ show argTy ++ " and " ++
       show argTy ++ " but got " ++ show tL ++
       " and " ++ show tR
-
---- End ---
-
-testCode = "(define (map-vec [f : (Integer -> Integer)] [v : (Vector Integer Integer)]) : (Vector Integer Integer) (vector (f (vector-ref v 0)) (f (vector-ref v 1)))) (define (add1 [x : Integer]) : Integer (+ x 1)) (vector-ref (map-vec add1 (vector 0 41)) 1)"
-
-testThing code = do
-  let p = parseError code
-  let ty = typeCheck p
-  res <- interp [] p
-  putStrLn (show ty)
-
-thing = "(define (nth-fib [ct : Integer]) : Integer (nth-fib' ct 0 1)) (define (nth-fib' [ct : Integer] [n-2 : Integer] [n-1 : Integer]) : Integer (if (cmp eq? ct 0) n-2 (nth-fib' (- ct 1) n-1 (+ n-2 n-1)))) (nth-fib 8)"
