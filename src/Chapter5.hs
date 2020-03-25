@@ -352,10 +352,11 @@ makeBindings [] e = e
 -- Doing this before explicate control, contrary to what the book says
 -- because I don't think it will make a difference and it will be
 -- easier to collect locals in R3 than adding type info to C2...
+-- APT: Seems reasonable.
 
 type Locals = Map String C2.Type
 
-collectLocals :: R3.Program () R3.Type -> R3.Program (Locals) (R3.Type)
+collectLocals :: R3.Program () R3.Type -> R3.Program Locals R3.Type
 collectLocals (R3.Program _ e) = R3.Program locals e
  where locals = M.fromList (clsExpr e)
 
@@ -390,7 +391,7 @@ toC2Type (R3.TVector ts) = (C2.TVector (map toC2Type ts))
 
 {----- Explicate Control -----}
 
-explicateControl :: R3.Program (Locals) (R3.Type) -> C2.Program (Locals)
+explicateControl :: R3.Program Locals R3.Type -> C2.Program Locals
 explicateControl (R3.Program locals e) =
   C2.Pgrm locals (("start", startBlock):M.toList blocks)
  where (startBlock, blocks) = runEcState e

@@ -206,6 +206,9 @@ rfExpr (R4.Neg e) = R4.Neg (rfExpr e)
 rfExpr (R4.Add e1 e2) = R4.Add (rfExpr e1) (rfExpr e2)
 rfExpr (R4.Sub e1 e2) = R4.Sub (rfExpr e1) (rfExpr e2)
 rfExpr (R4.Var t@(R4.TFunc _ _) s) = R4.FunRef t s
+        -- APT: I think you have a fundamental misunderstanding here.
+        -- Only top-level functions should be changed here; let-bound vars of function type should not.
+        -- Use the Def list rather than the type to identify the top-level names.
 rfExpr e@(R4.Var _ _) = e
 rfExpr (R4.Let t s e1 e2) =
   R4.Let t s (rfExpr e1) (rfExpr e2)
@@ -233,6 +236,7 @@ rfExpr (R4.FunRef _ _) = undefined
 -- how to deal with the func-refs we added in the revealFunctions step. Though
 -- I may just remove the revealFunction step since we can determine a var
 -- is a function from its type info.
+-- APT: No, see my note above.
 
 limitFunctions :: R4.Program () R4.Type () -> R4.Program () R4.Type ()
 limitFunctions (R4.Program () ds e) = R4.Program () ds' e
@@ -735,10 +739,12 @@ ecCmp c = error $ "Called ecCmp on " ++ show c
 {- A monad for explicate control -}
 data EcS = EcS { ecsBlocks :: Map String C3.Tail, freshBlockNum :: Int }
 
+{- APT:
 runEcState :: R4.Expr R4.Type -> (C3.Tail, Map String C3.Tail)
 runEcState e =
   let (startBlock, ecsState) = runState (ecTail e) (EcS M.empty 0)
   in (startBlock, ecsBlocks ecsState)
+-}
 
 freshNum :: State EcS Int
 freshNum = do
@@ -1393,7 +1399,7 @@ piDef (X3.Def s (sSize, rsSize) ((fName, bl):bs)) = X3.Def s () bs'
 piDef _ = undefined
 
 intro :: String -> StackSize -> RootStackSize -> (String, X3.Block)
-intro fName sSize rsSize = ( fName,
+intro fName sSize rsSize = ( fName++"intro",
   X3.Block (
     [ X3.Pushq (X3.Reg Rbp)
     , X3.Movq (X3.Reg Rsp) (X3.Reg Rbp)

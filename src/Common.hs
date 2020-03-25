@@ -174,3 +174,7 @@ instance PrettyPrint Register where
 fromEither :: Either a b -> b
 fromEither (Left _) = error $ "fromEither: Expected Right!"
 fromEither (Right x) = x
+
+globalize :: String -> String
+globalize s = "_" ++ s   -- for MAC
+-- globalize s = s  -- for linux

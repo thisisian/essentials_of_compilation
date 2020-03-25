@@ -2,7 +2,6 @@ module X860 where
 
 import Common
 
-
 data Arg = Num Int | Reg Register | Deref Register Int
   deriving (Eq, Ord)
 
@@ -25,7 +24,7 @@ instance PrettyPrint Instr where
     "movq  " ++ prettyPrint aL ++ ", " ++ prettyPrint aR ++ "\n"
   prettyPrint (Negq a)     = "negq  " ++ prettyPrint a ++ "\n"
   prettyPrint Retq         = "retq\n"
-  prettyPrint (Callq s)    = "callq " ++ s ++ "\n"
+  prettyPrint (Callq s)    = "callq " ++ (globalize s) ++ "\n" 
   prettyPrint (Pushq a)    = "pushq " ++ prettyPrint a ++ "\n"
   prettyPrint (Popq a)     = "popq  " ++ prettyPrint a ++ "\n"
   prettyPrint (Jmp s)      = "jmp " ++ s ++ "\n"
@@ -41,8 +40,8 @@ data Program = Program PInfo [(String, Block)]
 instance PrettyPrint Program where
   prettyPrint (Program _ bs) = concatMap printBlock bs
    where
-     printBlock ("main", block) =
-       "\n\t.globl main\n" ++ "main:\n" ++ prettyPrint block
+     printBlock ("main", block) =   
+       "\n\t.globl " ++ (globalize "main") ++ "\n" ++ (globalize "main") ++ ":\n" ++ prettyPrint block  
      printBlock (label, block) =
        label ++ ":\n" ++ prettyPrint block
 

@@ -20,10 +20,10 @@ compile =
   . selectInstructions
   . uncoverLocals
   . explicateControl
-  . rco
+  . rco'
   . uniquify
 
-{- Uniqify Variables -}
+{- Uniquify Variables -}
 
 type SymbolTable = M.Map String String
 
@@ -93,6 +93,31 @@ makeBindings :: [(String, R1.Expr)] -> R1.Expr -> R1.Expr
 makeBindings ((b, be):bs) e =
   R1.Let b be (makeBindings bs e)
 makeBindings [] e = e
+
+-- Alternatively, here is the classic ANF ("A normal form") transformation:
+rco' :: R1.Program -> R1.Program
+rco' (R1.Pgrm i e) = R1.Pgrm i $ runFreshEnv "_rco" (rcoExpr' e return)
+
+rcoExpr' :: R1.Expr -> (R1.Expr -> FreshEnv R1.Expr) -> FreshEnv R1.Expr
+rcoExpr' (R1.Num x) k = k (R1.Num x)
+rcoExpr' R1.Read k = letbind R1.Read k
+rcoExpr' (R1.Var name) k = k (R1.Var name)
+rcoExpr' (R1.Neg e) k =
+  rcoExpr' e (\e' -> letbind (R1.Neg e') k)
+rcoExpr' (R1.Add eL eR) k = 
+  rcoExpr' eL (\ eL' ->
+      rcoExpr' eR (\ eR' -> 
+         letbind (R1.Add eL' eR') k))
+rcoExpr' (R1.Let name be e) k = do
+  rcoExpr' be (\ be' -> 
+     do e' <- rcoExpr' e k
+        return $ R1.Let name be' e')
+
+letbind :: R1.Expr -> (R1.Expr -> FreshEnv R1.Expr) -> FreshEnv R1.Expr
+letbind e k =
+   do n <- fresh
+      k' <- k (R1.Var n)
+      return $ R1.Let n e k'
 
 {- Explicate Control -}
 

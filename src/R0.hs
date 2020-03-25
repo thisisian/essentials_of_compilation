@@ -70,9 +70,9 @@ interpExpr (Num x) = return x
 interpExpr Read = do
   putStrLn "Enter an integer: "
   read <$> getLine
-interpExpr (Neg e) = (0 -) <$> interpExpr e
+interpExpr (Neg e) = (0 -) <$> interpExpr e  -- APT: Is this really better than just using do notation?
 interpExpr (Add eL eR) =
-  return (+) `ap` interpExpr eL `ap` interpExpr eR
+  return (+) `ap` interpExpr eL `ap` interpExpr eR  -- ditto
 
 {- Partial evaluator -}
 

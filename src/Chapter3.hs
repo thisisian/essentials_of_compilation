@@ -33,7 +33,7 @@ compile =
   . rco
   . uniquify
 
-{- Uncover Locals -}
+{- Uncover Live -}
 
 
 uncoverLive :: PX.Program -> PX.Program

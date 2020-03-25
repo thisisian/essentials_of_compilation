@@ -2,3 +2,4 @@
 essentials-of-compilation.cabal
 *~
 *.lock
+*.o

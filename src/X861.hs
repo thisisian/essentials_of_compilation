@@ -51,7 +51,7 @@ instance PrettyPrint Instr where
   prettyPrint (Movq aL aR)   = prettyPrintBinOp "movq" aL aR
   prettyPrint (Negq a)       = "negq  " ++ prettyPrint a ++ "\n"
   prettyPrint Retq           = "retq\n"
-  prettyPrint (Callq s)      = "callq " ++ s ++ "\n"
+  prettyPrint (Callq s)      = "callq " ++ (globalize s) ++ "\n" 
   prettyPrint (Pushq a)      = "pushq " ++ prettyPrint a ++ "\n"
   prettyPrint (Popq a)       = "popq  " ++ prettyPrint a ++ "\n"
   prettyPrint (Jmp s)        = "jmp " ++ s ++ "\n"
@@ -75,7 +75,7 @@ instance PrettyPrint (Program a) where
   prettyPrint (Program _ bs) = concatMap printBlock bs
    where
      printBlock ("main", block) =
-       "\n\t.globl main\n" ++ "main:\n" ++ prettyPrint block
+       "\n\t.globl " ++ (globalize "main") ++ "\n" ++ (globalize "main") ++ ":\n" ++ prettyPrint block  
      printBlock (label, block) =
        label ++ ":\n" ++ prettyPrint block
 

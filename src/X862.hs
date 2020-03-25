@@ -38,7 +38,7 @@ instance PrettyPrint Arg where
     show off ++ "(" ++ prettyPrint r ++ ")"
   prettyPrint (Var s) = "VAR_" ++ s
   prettyPrint (ByteReg r) = prettyPrint r
-  prettyPrint (GlobalValue s) = s ++ "(%rip)"
+  prettyPrint (GlobalValue s) = (globalize s) ++ "(%rip)"
 
 instance PrettyPrint CC where
   prettyPrint CCEq = "e"
@@ -53,8 +53,8 @@ instance PrettyPrint Instr where
   prettyPrint (Movq aL aR)   = prettyPrintBinOp "movq" aL aR
   prettyPrint (Negq a)       = "negq  " ++ prettyPrint a ++ "\n"
   prettyPrint Retq           = "retq\n"
-  prettyPrint (Callq s)      = "callq " ++ s ++ "\n"
-  prettyPrint (Pushq a)      = "pushq " ++ prettyPrint a ++ "\n"
+  prettyPrint (Callq s)      = "callq " ++ (globalize s) ++ "\n"  
+  prettyPrint (Pushq a)      = "pushq " ++ prettyPrint a ++ "\n" 
   prettyPrint (Popq a)       = "popq  " ++ prettyPrint a ++ "\n"
   prettyPrint (Jmp s)        = "jmp " ++ s ++ "\n"
   prettyPrint (Xorq aL aR)   = prettyPrintBinOp "xorq" aL aR
@@ -77,7 +77,7 @@ instance PrettyPrint (Program a) where
   prettyPrint (Program _ bs) = concatMap printBlock bs
    where
      printBlock ("main", block) =
-       "\n\t.globl main\n" ++ "main:\n" ++ prettyPrint block
+       "\n\t.globl " ++ (globalize "main") ++ "\n" ++ (globalize "main") ++ ":\n" ++ prettyPrint block  
      printBlock (label, block) =
        label ++ ":\n" ++ prettyPrint block
 

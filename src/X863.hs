@@ -4,6 +4,7 @@ import Common
 import Data.Set (Set)
 import qualified Data.Set as S
 
+-- APT: What is parameter a for? Seems useless (and is always instantiated to () ). 
 data Program a b = Program a [Def b]
   deriving (Show)
 
@@ -27,7 +28,7 @@ data Arg = Num Int
          | FunRef String
   deriving (Show, Eq, Ord)
 
-data Def a = Def String a [(String, Block)]
+data Def a = Def String a [(String, Block)]  
   deriving (Show)
 
 data CC = CCEq | CCL | CCLe | CCG | CCGe
@@ -43,8 +44,8 @@ instance PrettyPrint Arg where
     show off ++ "(" ++ prettyPrint r ++ ")"
   prettyPrint (Var s) = "VAR_" ++ s
   prettyPrint (ByteReg r) = prettyPrint r
-  prettyPrint (GlobalValue s) = s ++ "(%rip)"
-  prettyPrint (FunRef s) = s ++ "(%rip)"
+  prettyPrint (GlobalValue s) = (globalize s) ++ "(%rip)"
+  prettyPrint (FunRef s) = (globalize s) ++ "(%rip)"
 
 instance PrettyPrint CC where
   prettyPrint CCEq = "e"
@@ -59,7 +60,7 @@ instance PrettyPrint Instr where
   prettyPrint (Movq aL aR)   = prettyPrintBinOp "movq" aL aR
   prettyPrint (Negq a)       = "negq  " ++ prettyPrint a ++ "\n"
   prettyPrint Retq           = "retq\n"
-  prettyPrint (Callq s)      = "callq " ++ s ++ "\n"
+  prettyPrint (Callq s)      = "callq " ++ (globalize s) ++ "\n"  
   prettyPrint (Pushq a)      = "pushq " ++ prettyPrint a ++ "\n"
   prettyPrint (Popq a)       = "popq  " ++ prettyPrint a ++ "\n"
   prettyPrint (Jmp s)        = "jmp " ++ s ++ "\n"
@@ -85,12 +86,10 @@ instance PrettyPrint (Program a b) where
   prettyPrint (Program _ ds) = concatMap prettyPrint ds
 
 instance PrettyPrint (Def a) where
-  prettyPrint (Def s _ bs) = concatMap printBlock bs
+  prettyPrint (Def s _ bs) = "\n\t.globl " ++ (globalize s) ++ "\n" ++ (globalize s) ++ ":\n" ++ (concatMap printBlock bs)
    where
-     printBlock ("main", block) =
-       "\n\t.globl main\n" ++ "main:\n" ++ prettyPrint block
-     printBlock (label, block) =
-       label ++ ":\n" ++ prettyPrint block
+     printBlock (label, block) = 
+       label ++ ":\n" ++ prettyPrint block 
 
 
 isVar :: Arg -> Bool

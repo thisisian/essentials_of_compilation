@@ -468,9 +468,11 @@ compileAndRun c ins prog = do
         (ExitFailure _) -> error $ stdErr
         ExitSuccess -> runBinary bin ins
 
+-- APT: surely withSystemTempFile should already do this job?...
 withEmptyTempFile :: String -> (FilePath -> IO b) -> IO b
 withEmptyTempFile fp f =
   bracket
     (emptySystemTempFile fp)
-    (removeFile)
-    f
+    (removeFile)   -- APT: this makes debugging very hard!
+--    (return (return 0))
+    f 

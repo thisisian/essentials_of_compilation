@@ -145,6 +145,8 @@ def = emptyDef { commentLine = ";;"
 -- I'm going to implement with integers, where F->0, T->(not 0)
 -- since the expressions will be typechecked anyway, perhaps this won't
 -- have any issues?
+-- APT: This choice certainly avoids a lot of irritating book-keeping,
+-- although it is not as clean. 
 
 type Env = M.Map String Int
 

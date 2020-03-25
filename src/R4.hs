@@ -255,6 +255,11 @@ interp inputs (Program _ ds e) = evalStateT (interpExpr topLevelEnv e) inputs
                 . map (\(Define s args _ _ body) ->
                        (s, VLambda (map fst args) body M.empty))
                 $ ds
+-- APT: Although this is what the book said to do, it seems unnecessarily awkward to me for this language.
+-- (I guess it will make more sense for the next chapter, where functions can be defined locally.)
+-- A more standard solution is to build the topLevelEnv and then simply pass it as an additional
+-- (unhanging) parameter to the interpreter, to be consulted in the Var case if the usual
+-- local envrionment doesn't have a binding. 
 
 interpExpr :: (Env a) -> (Expr a) -> StateT [Int] IO (Val a)
 interpExpr _ (Num x) = return $ VNum x
